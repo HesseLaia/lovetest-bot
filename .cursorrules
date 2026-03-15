@@ -1,0 +1,5 @@
+# 项目专用约定
+1. gameLogic里结束游戏前必须先保存language到局部变量再endGame
+2. /newgame命令里先查getCurrentGame再弹键盘
+3. InlineKeyboard格式：.text('English', 'lang_en').text('Русский', 'lang_ru')
+4. callbackQuery取chatId：ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id
