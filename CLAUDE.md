@@ -21,6 +21,9 @@
 ### 不得改动 A 时影响 B
 每次修改范围最小化。改完必须说明：「这个改动只影响了 xxx，不影响其他模块。」
 
+### 不得硬编码任何密钥或敏感信息
+BOT_TOKEN、API Key、数据库密码等必须全部从环境变量读取，不得出现在代码里。
+
 ---
 
 ## 🟡 数据库约定
@@ -43,6 +46,21 @@ await db.execute('INSERT ... VALUES (?, ?)', [id, JSON.stringify(obj)]);
 // 取
 return JSON.parse(rows[0].data);
 ```
+
+### Railway 数据库地址区分内网/公网
+```
+# 本地开发（.env）：用公网地址
+DB_HOST=xxx.proxy.rlwy.net
+DB_PORT=xxxxx
+
+# Railway 服务内部：用内网地址
+DB_HOST=mysql.railway.internal
+DB_PORT=3306
+```
+两个不能混用，本地用公网，Railway服务用内网。
+
+### bot服务必须和MySQL在同一个Railway project里
+跨project访问会ETIMEDOUT，不要把bot部署在project A、MySQL放在project B。
 
 ---
 
@@ -77,14 +95,59 @@ async function saveRecord(record) {
 
 ---
 
+## 🟡 .env 文件安全
+
+### 新项目初始化顺序（不能反）
+```
+1. git init
+2. 建 .gitignore，写入 .env
+3. 才能建 .env 填入真实 key
+```
+
+.env 一旦被 git add 过，gitignore 就失效了。
+如果已经泄露：立刻轮换所有 key，删仓库重建。
+
+### push 前必须确认
+```powershell
+git ls-files | Select-String ".env"
+```
+有输出就不能 push，先执行 git rm --cached .env。
+
+---
+
+## 🟡 第三方 API 模型 ID
+
+OpenRouter 的模型 ID 会过期或改名，使用前先确认：
+- `google/gemini-2.0-flash-exp` 已下线
+- 当前可用：`google/gemini-2.0-flash-001` 或 `google/gemini-2.5-flash`
+
+新项目开始前去 openrouter.ai/models 确认模型 ID 还有效。
+
+---
+
+## 🟡 Node 环境变量加载
+
+Node 不会自动读取 .env，必须用 dotenv：
+
+```bash
+npm install dotenv
+```
+
+```js
+// bot.js 第一行
+import 'dotenv/config';
+```
+
+---
+
 ## 🟢 部署约定
 
 ### Railway 环境变量（必须设置）
 ```
 BOT_TOKEN=
-DB_HOST=        # 用公网地址，不用 mysql.railway.internal
-DB_PORT=
-DB_NAME=railway
+DB_HOST=        # Railway内网：mysql.railway.internal
+DB_PORT=        # Railway内网：3306
+DB_NAME=
 DB_USER=root
 DB_PASSWORD=
 ```
@@ -98,6 +161,13 @@ Get-Process node | ForEach-Object { (Get-WmiObject Win32_Process -Filter "Proces
 ```
 Cursor 自己的 tsserver 进程不用管。
 
+### 群里触发命令
+群里命令必须带 bot 用户名，否则无响应：
+```
+/newgame@YourBotUsername
+```
+私聊直接 /newgame 即可。
+
 ---
 
 ## 🟢 文件结构
@@ -106,6 +176,8 @@ Cursor 自己的 tsserver 进程不用管。
 your-bot/
 ├── .cursorrules          ← 项目专用规则
 ├── CLAUDE.md             ← 本文件（通用规则）
+├── .env                  ← 本地环境变量（不提交git）
+├── .gitignore            ← 必须包含 .env
 ├── package.json
 ├── bot.js
 ├── src/

@@ -1,5 +1,117 @@
-# 项目专用约定
-1. gameLogic里结束游戏前必须先保存language到局部变量再endGame
-2. /newgame命令里先查getCurrentGame再弹键盘
-3. InlineKeyboard格式：.text('English', 'lang_en').text('Русский', 'lang_ru')
-4. callbackQuery取chatId：ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id
+# 项目专用规则 —— TurtleSoup Bot（海龟汤）
+# 放在项目根目录，文件名改为 .cursorrules
+# 与 CLAUDE.md（通用规则）配合使用
+
+---
+
+## 项目说明
+
+Lateral Thinking Puzzle（海龟汤）群组 bot。
+AI扮演主持人，自动判断是/否/无关。
+技术栈：grammy + OpenRouter API + mysql2 + Railway。
+
+---
+
+## 🔴 核心约定
+
+### 结束游戏前必须先取出 language
+gameLogic 里所有结束游戏的方法（endGame/deleteGame）执行前，必须先把 language 保存到局部变量：
+
+```js
+// ❌ 错误：结束后再查已经拿不到了
+await gameRepo.endGame(chatId);
+const game = await gameRepo.getCurrentGame(chatId); // 返回 null
+
+// ✅ 正确：先拿再结束
+const game = await gameRepo.getCurrentGame(chatId);
+const result = { truth: game.truth, language: game.language };
+await gameRepo.endGame(chatId);
+return result;
+```
+
+### /newgame 命令必须先检查游戏状态
+```js
+bot.command('newgame', async (ctx) => {
+  const existingGame = await gameRepo.getCurrentGame(ctx.chat.id);
+  if (existingGame) {
+    await ctx.reply(t(existingGame.language || 'en', 'gameInProgress'));
+    return;
+  }
+  // 再弹语言选择键盘
+});
+```
+
+### InlineKeyboard 格式
+```js
+// ❌ 错误：text() 只传一个参数，回调匹配不上
+new Keyboard().text('English').text('Русский')
+
+// ✅ 正确：第二个参数是回调数据
+new InlineKeyboard().text('English', 'lang_en').text('Русский', 'lang_ru')
+```
+
+---
+
+## 🟡 AI 返回值约定
+
+### 生成故事：强制 JSON 格式
+```js
+// prompt 里必须明确要求只返回 JSON，不能有其他文字
+// 解析时去掉可能的 markdown 代码块
+const clean = content.replace(/```json|```/g, '').trim();
+const { scenario, truth } = JSON.parse(clean);
+```
+
+### 判断问题：强制三选一映射
+```js
+const answer = response.trim().toUpperCase();
+if (answer.includes('YES')) return 'YES';
+if (answer.includes('NO')) return 'NO';
+return 'IRRELEVANT'; // 其他任何情况
+```
+
+### OpenRouter 模型 ID
+当前使用：`google/gemini-2.0-flash-001`
+如果出现 404，去 openrouter.ai/models 确认最新可用的 Gemini Flash ID。
+
+---
+
+## 🟡 数据库表结构
+
+```sql
+CREATE TABLE IF NOT EXISTS games (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  chat_id BIGINT NOT NULL UNIQUE,
+  language VARCHAR(2) NOT NULL,
+  scenario LONGTEXT NOT NULL,
+  truth LONGTEXT NOT NULL,
+  questions_count INT DEFAULT 0,
+  status VARCHAR(20) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  ended_at TIMESTAMP NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+scenario 和 truth 是普通字符串，直接存取，不需要 JSON.stringify/parse。
+
+---
+
+## 🟢 游戏状态流转
+
+```
+/newgame → 选语言 → AI生成故事 → status=playing
+回复bot消息 → AI判断 → 返回YES/NO/IRRELEVANT
+/guess 或 /reveal → status=ended
+/cancel → 直接删除记录
+```
+
+每个 handler 开头检查 status，不符合则提示用户。
+
+---
+
+## 🟢 多语言规则
+
+- 启动时用 InlineKeyboard 选 EN/RU
+- language 存在数据库，每次从数据库读
+- 所有提示消息用 t(language, key) 获取
+- 缺失 key 时回退到英语
