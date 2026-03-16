@@ -7,15 +7,17 @@ export const gameLogic = {
    * 启动新游戏
    */
   async startGame(chatId, language) {
-    const existingGame = await gameRepo.getCurrentGame(chatId);
-    if (existingGame) {
-      throw new Error('GAME_IN_PROGRESS');
+    try {
+      const { scenario, truth } = await aiClient.generateStory(language);
+      await gameRepo.create(chatId, language, scenario, truth);
+
+      return { scenario, truth };
+    } catch (error) {
+      if (error.code === 'ER_DUP_ENTRY') {
+        throw new Error('GAME_IN_PROGRESS');
+      }
+      throw error;
     }
-
-    const { scenario, truth } = await aiClient.generateStory(language);
-    await gameRepo.create(chatId, language, scenario, truth);
-
-    return { scenario, truth };
   },
 
   /**
