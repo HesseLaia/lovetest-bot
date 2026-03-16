@@ -13,17 +13,38 @@ export const aiClient = {
       ru: 'Russian',
     };
 
-    const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤"). 
-Generate a medium-difficulty puzzle in ${languageMap[language]}.
+    const types = [
+      'Dark/Disturbing: involves death, crime, psychological horror',
+      'Bizarre/Absurd: extremely weird logic, unexpected twists',
+      'Gore/Thriller: graphic but tasteful, shocking revelations',
+      "Mind-bending: reality isn't what it seems, unreliable narrator",
+      'Dark Humor: morbid but darkly funny',
+    ];
+    const randomType = types[Math.floor(Math.random() * types.length)];
+
+    const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
+Generate a puzzle in ${languageMap[language]} with the following requirements:
+
+Puzzle Type (MUST follow this style):
+${randomType}
 
 Requirements:
-1. The scenario should be mysterious and intriguing (50-100 words)
-2. The truth should be the complete story that explains the scenario (150-300 words)
-3. The puzzle should be solvable through yes/no questions
-4. Return ONLY a valid JSON object with this exact format:
+1. Scenario: 50-100 words, mysterious and intriguing
+2. Truth: 150-300 words, complete explanation
+3. The puzzle MUST have at least 2 unexpected plot twists
+4. The most obvious explanation should be misleading
+5. The puzzle must be solvable through yes/no questions
+6. Aim for medium-high difficulty (requires deep reasoning)
 
+FORBIDDEN scenarios (do NOT use):
+- Albatross/turtle soup stories
+- Elevator scenarios
+- Locked room suicide
+- Bartender cures hiccups with gun
+- Any variation of these classic puzzles
+
+Return ONLY a valid JSON object with this exact format:
 {"scenario": "...", "truth": "..."}
-
 Do not include any other text or explanation.`;
 
     const controller = new AbortController();

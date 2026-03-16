@@ -1047,4 +1047,125 @@ Get-Process node | ForEach-Object { (Get-WmiObject Win32_Process -Filter "Proces
 
 ---
 
+## Phase 9：故事生成质量优化
+
+### Task 9.1：优化 AI 故事生成 Prompt
+
+**目标**：提升海龟汤故事的多样性、刺激性和复杂度
+
+**依赖**：无（基于现有 Task 2.1 aiClient.js）
+
+**问题背景**：
+测试中发现生成的故事场景过于相似，不够刺激/猎奇，不符合年轻用户的期待。
+
+**修改文件**：`src/core/aiClient.js`
+
+**改进方向**：
+
+#### 1. 强制类型多样化
+每次生成时从 5 个类型中随机选一个，避免风格单一：
+
+```javascript
+const types = [
+  'Dark/Disturbing: involves death, crime, psychological horror',
+  'Bizarre/Absurd: extremely weird logic, unexpected twists',
+  'Gore/Thriller: graphic but tasteful, shocking revelations',
+  'Mind-bending: reality isn\'t what it seems, unreliable narrator',
+  'Dark Humor: morbid but darkly funny'
+];
+const randomType = types[Math.floor(Math.random() * types.length)];
+```
+
+#### 2. 提高复杂度要求
+在 prompt 中明确要求：
+- 故事必须有至少 2 层反转
+- 表面解释必须是误导性的
+- 难度中等偏高（需要深度推理）
+- 避免常见套路
+
+#### 3. 明确禁止重复老梗
+列出海龟汤界的经典老梗，强制 AI 避开：
+- 信天翁/海龟汤故事
+- 电梯场景
+- 密室自杀
+- 酒保用枪治打嗝
+- 以上任何变体
+
+**修改后的 Prompt 结构**：
+
+```javascript
+async generateStory(language) {
+  const languageMap = {
+    en: 'English',
+    ru: 'Russian',
+  };
+
+  // 随机选择类型
+  const types = [
+    'Dark/Disturbing: involves death, crime, psychological horror',
+    'Bizarre/Absurd: extremely weird logic, unexpected twists',
+    'Gore/Thriller: graphic but tasteful, shocking revelations',
+    'Mind-bending: reality isn\'t what it seems, unreliable narrator',
+    'Dark Humor: morbid but darkly funny'
+  ];
+  const randomType = types[Math.floor(Math.random() * types.length)];
+
+  const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
+Generate a puzzle in ${languageMap[language]} with the following requirements:
+
+**Puzzle Type (MUST follow this style):**
+${randomType}
+
+**Requirements:**
+1. Scenario: 50-100 words, mysterious and intriguing
+2. Truth: 150-300 words, complete explanation
+3. The puzzle MUST have at least 2 unexpected plot twists
+4. The most obvious explanation should be misleading
+5. Solvable through yes/no questions
+6. Aim for medium-high difficulty (requires deep reasoning)
+
+**FORBIDDEN scenarios (do NOT use):**
+- Albatross/turtle soup stories
+- Elevator scenarios
+- Locked room suicide
+- Bartender cures hiccups with gun
+- Any variation of these classic puzzles
+
+Return ONLY a valid JSON object with this exact format:
+{"scenario": "...", "truth": "..."}
+
+Do not include any other text or explanation.`;
+
+  // ... 其余代码不变
+}
+```
+
+**测试要点**：
+1. **内容审核测试**：生成 5-10 个 Gore/Dark 类型故事，检查 Gemini 是否会拒绝
+   - 如果被拒绝，调整为 "Thriller: shocking but not overly graphic"
+2. **类型分布测试**：生成 20 个故事，检查 5 种类型分布是否均匀
+3. **老梗避免测试**：确认不再出现禁止列表中的场景
+4. **复杂度测试**：实际玩 3-5 局，评估故事是否有 2 层反转、难度是否提升
+5. **多语言测试**：俄语故事质量是否与英语一致
+
+**影响分析**：
+- ✅ 只修改 `aiClient.generateStory` 的 prompt 和类型选择逻辑
+- ✅ 返回值格式不变（仍然是 `{scenario, truth}`）
+- ✅ 不影响其他模块（gameLogic, handlers 等）
+- ⚠️ 生成时间可能略有增加（更复杂的要求）
+- ⚠️ 需要监控 API 是否因内容审核拒绝生成
+
+**验收标准**：
+- [ ] 连续生成 10 个故事，5 种类型都有出现
+- [ ] 没有出现禁止列表中的老梗
+- [ ] 至少 70% 的故事有明显的反转/误导
+- [ ] 英语和俄语故事质量一致
+- [ ] Gemini 没有因内容审核拒绝生成（或已调整 prompt）
+
+**参考**：
+- 当前 `aiClient.generateStory` 实现（`src/core/aiClient.js` L10-L63）
+- PRD AI 集成规范
+
+---
+
 **任务拆解完成，准备开发！** 🚀
