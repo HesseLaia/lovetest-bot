@@ -6,10 +6,10 @@ export const gameLogic = {
   /**
    * 启动新游戏
    */
-  async startGame(chatId, language) {
+  async startGame(chatId, language, difficulty = 'medium') {
     try {
-      const { scenario, truth } = await aiClient.generateStory(language);
-      await gameRepo.create(chatId, language, scenario, truth);
+      const { scenario, truth } = await aiClient.generateStory(language, difficulty);
+      await gameRepo.create(chatId, language, difficulty, scenario, truth);
 
       return { scenario, truth };
     } catch (error) {

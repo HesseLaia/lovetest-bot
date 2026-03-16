@@ -4,12 +4,17 @@ import { pool } from './pool.js';
 export const gameRepo = {
   /**
    * 创建新游戏
+   * @param {number} chatId
+   * @param {string} language - 'en' | 'ru'
+   * @param {string} [difficulty='medium'] - 'easy' | 'medium' | 'hard'
+   * @param {string} scenario
+   * @param {string} truth
    */
-  async create(chatId, language, scenario, truth) {
+  async create(chatId, language, difficulty = 'medium', scenario, truth) {
     const [result] = await pool.execute(
-      `INSERT INTO games (chat_id, language, scenario, truth, status)
-       VALUES (?, ?, ?, ?, 'playing')`,
-      [chatId, language, scenario, truth]
+      `INSERT INTO games (chat_id, language, difficulty, scenario, truth, status)
+       VALUES (?, ?, ?, ?, ?, 'playing')`,
+      [chatId, language, difficulty, scenario, truth]
     );
     return result.insertId;
   },
