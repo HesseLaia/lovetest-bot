@@ -26,41 +26,55 @@ Requirements:
 
 Do not include any other text or explanation.`;
 
-    const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://github.com/yourusername/lovetest_bot',
-      },
-      body: JSON.stringify({
-        model: config.OPENROUTER_MODEL,
-        messages: [
-          { role: 'user', content: prompt },
-        ],
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时
 
-    if (!response.ok) {
-      throw new Error(`OpenRouter API 错误: ${response.status}`);
+    try {
+      const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/yourusername/lovetest_bot',
+        },
+        body: JSON.stringify({
+          model: config.OPENROUTER_MODEL,
+          messages: [
+            { role: 'user', content: prompt },
+          ],
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API 错误: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content;
+      if (rawContent == null) {
+        throw new Error('AI 返回的数据格式不正确');
+      }
+      const content = String(rawContent).trim();
+
+      // 若模型返回了 markdown 代码块，尝试剥离
+      const jsonStr = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+      const storyData = JSON.parse(jsonStr);
+
+      if (!storyData.scenario || !storyData.truth) {
+        throw new Error('AI 返回的数据格式不正确');
+      }
+
+      return storyData;
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        throw new Error('API_TIMEOUT');
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content;
-    if (rawContent == null) {
-      throw new Error('AI 返回的数据格式不正确');
-    }
-    const content = String(rawContent).trim();
-
-    // 若模型返回了 markdown 代码块，尝试剥离
-    const jsonStr = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    const storyData = JSON.parse(jsonStr);
-
-    if (!storyData.scenario || !storyData.truth) {
-      throw new Error('AI 返回的数据格式不正确');
-    }
-
-    return storyData;
   },
 
   /**
@@ -92,32 +106,46 @@ Based on the complete story, answer the player's question. You MUST respond with
 
 Respond in ${languageMap[language]}. Output ONLY the word, nothing else.`;
 
-    const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: config.OPENROUTER_MODEL,
-        messages: [
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 10,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s 超时
 
-    if (!response.ok) {
-      throw new Error(`OpenRouter API 错误: ${response.status}`);
+    try {
+      const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: config.OPENROUTER_MODEL,
+          messages: [
+            { role: 'user', content: prompt },
+          ],
+          max_tokens: 10,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API 错误: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawAnswer = data.choices?.[0]?.message?.content;
+      const answer = (rawAnswer != null ? String(rawAnswer) : '').trim().toUpperCase();
+
+      // 强制映射到三个值之一（PRD：其他任何返回都当 IRRELEVANT）
+      if (answer.includes('YES')) return 'YES';
+      if (answer.includes('NO')) return 'NO';
+      return 'IRRELEVANT';
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        throw new Error('API_TIMEOUT');
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    const rawAnswer = data.choices?.[0]?.message?.content;
-    const answer = (rawAnswer != null ? String(rawAnswer) : '').trim().toUpperCase();
-
-    // 强制映射到三个值之一（PRD：其他任何返回都当 IRRELEVANT）
-    if (answer.includes('YES')) return 'YES';
-    if (answer.includes('NO')) return 'NO';
-    return 'IRRELEVANT';
   },
 };

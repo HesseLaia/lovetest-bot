@@ -21,6 +21,8 @@ export function registerCallbacks(bot) {
     } catch (error) {
       if (error.message === 'GAME_IN_PROGRESS') {
         await ctx.reply(t(language, 'gameInProgress'));
+      } else if (error.message === 'API_TIMEOUT') {
+        await ctx.reply(t(language, 'networkError'));
       } else {
         console.error('Error generating story:', error);
         await ctx.reply(t(language, 'generationFailed'));

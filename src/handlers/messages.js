@@ -21,6 +21,8 @@ export function registerMessageHandlers(bot) {
     } catch (error) {
       if (error.message === 'NO_GAME') {
         await ctx.reply(t('en', 'noGame'));
+      } else if (error.message === 'API_TIMEOUT') {
+        await ctx.reply(t('en', 'networkError'));
       } else {
         console.error('Error handling question:', error);
         await ctx.reply(t('en', 'unknownError'));

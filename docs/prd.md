@@ -319,6 +319,90 @@ console.log(game.scenario); // 直接是字符串
 
 ---
 
+## 🔧 MVP v1.1 - 并发和稳定性优化
+
+### 待修复问题
+
+#### 问题 1：startGame 竞态条件（高优先级）
+
+**问题描述**：
+当多个用户几乎同时点击语言按钮时，会出现竞态条件：
+- 用户 A 点击 English → 检查无游戏 → 开始生成故事（耗时 3-10s）
+- 用户 B 同时点击 Русский → 检查无游戏（此时 A 还没插入）→ 也开始生成
+- 结果：第二个请求会因为 `chat_id UNIQUE` 约束失败，抛出 MySQL 错误
+
+**影响**：
+- 用户看到 "unknownError" 而不是 "gameInProgress"
+- 浪费一次 OpenRouter API 调用
+
+**修复方案**：
+利用数据库 UNIQUE 约束做并发控制，捕获 `ER_DUP_ENTRY` 错误：
+
+```javascript
+// src/core/gameLogic.js - startGame
+async startGame(chatId, language) {
+  try {
+    const { scenario, truth } = await aiClient.generateStory(language);
+    await gameRepo.create(chatId, language, scenario, truth);
+    return { scenario, truth };
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw new Error('GAME_IN_PROGRESS');
+    }
+    throw error;
+  }
+}
+```
+
+**注意**：不再需要提前 `getCurrentGame` 检查，直接依赖数据库约束。
+
+#### 问题 2：AI API 超时处理（中优先级）
+
+**问题描述**：
+OpenRouter API 调用没有超时设置，可能导致：
+- 网络问题时请求无限挂起
+- 用户长时间等待没有反馈
+- 成本浪费（超时后重试会再次调用 API）
+
+**影响**：
+- 用户体验差（卡住不响应）
+- Railway 实例可能因为请求堆积导致资源耗尽
+
+**修复方案**：
+在 `aiClient` 的 `fetch` 调用中添加 15 秒超时和重试机制：
+
+```javascript
+// src/core/aiClient.js - generateStory / judgeQuestion
+async generateStory(language) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    // ... 正常处理
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error.name === 'AbortError') {
+      throw new Error('API_TIMEOUT');
+    }
+    throw error;
+  }
+}
+```
+
+**超时时间设定**：
+- `generateStory`：15 秒（场景生成通常 3-8 秒）
+- `judgeQuestion`：10 秒（问题判断通常 1-3 秒）
+
+**错误映射**：
+- `API_TIMEOUT` → handler 捕获后显示 "networkError"
+
+---
+
 ## 📝 后续迭代方向
 
 1. **难度选择**：启动时选择 简单/中等/困难
@@ -329,6 +413,8 @@ console.log(game.scenario); // 直接是字符串
 6. **私聊支持**：单人练习模式
 7. **主题分类**：选择恐怖/推理/科幻等类型
 8. **时间限制**：限时挑战模式
+9. **软删除**：`/cancel` 改为软删除，保留数据用于分析
+10. **提问计数优化**：在 AI 判断前累加，避免顺序错乱
 
 ---
 

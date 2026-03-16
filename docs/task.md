@@ -846,9 +846,160 @@ git push
 
 ---
 
-## ✅ MVP 版本已完成！
+## ✅ MVP v1.0 已完成！
 
 所有 Task 已完成，项目已成功部署并测试通过。
+
+---
+
+## Phase 8：v1.1 并发和稳定性优化
+
+### Task 8.1：修复 startGame 竞态条件
+
+**目标**：解决多用户同时点击语言按钮导致的并发问题
+
+**依赖**：无（基于现有 Task 3.1）
+
+**问题描述**：
+当多个用户几乎同时点击语言按钮时，会出现竞态条件导致第二个请求因 MySQL UNIQUE 约束失败。
+
+**修改文件**：`src/core/gameLogic.js`
+
+**修改内容**：
+```javascript
+// 修改前（有竞态问题）
+async startGame(chatId, language) {
+  const existingGame = await gameRepo.getCurrentGame(chatId);
+  if (existingGame) {
+    throw new Error('GAME_IN_PROGRESS');
+  }
+  const { scenario, truth } = await aiClient.generateStory(language);
+  await gameRepo.create(chatId, language, scenario, truth);
+  return { scenario, truth };
+}
+
+// 修改后（利用数据库约束）
+async startGame(chatId, language) {
+  try {
+    const { scenario, truth } = await aiClient.generateStory(language);
+    await gameRepo.create(chatId, language, scenario, truth);
+    return { scenario, truth };
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw new Error('GAME_IN_PROGRESS');
+    }
+    throw error;
+  }
+}
+```
+
+**关键改动**：
+1. 移除 `getCurrentGame` 的提前检查
+2. 直接调用 `create`，依赖数据库 `chat_id UNIQUE` 约束
+3. 捕获 MySQL 的 `ER_DUP_ENTRY` 错误，转换为 `GAME_IN_PROGRESS`
+
+**影响分析**：
+- ✅ 解决并发竞态问题
+- ✅ 用户看到正确的 "gameInProgress" 提示
+- ✅ 避免浪费 OpenRouter API 调用（第二个请求会在生成前就发现冲突）
+- ⚠️ 注意：这个方案会在生成故事**之后**才检测冲突，仍可能浪费一次 API（但比现在好）
+
+**验收标准**：
+- [ ] 两个用户同时点击不同语言按钮，第二个用户看到 "gameInProgress" 而不是 "unknownError"
+- [ ] 单用户正常流程不受影响
+- [ ] 错误日志中不再出现未捕获的 `ER_DUP_ENTRY`
+
+**参考**：PRD v1.1 - 问题 1
+
+---
+
+### Task 8.2：添加 AI API 超时处理
+
+**目标**：为 OpenRouter API 调用添加超时和错误处理
+
+**依赖**：无（基于现有 Task 2.1）
+
+**问题描述**：
+OpenRouter API 调用没有超时设置，网络问题时请求可能无限挂起，导致用户长时间等待。
+
+**修改文件**：`src/core/aiClient.js`
+
+**修改内容**：
+
+在 `generateStory` 和 `judgeQuestion` 中添加超时控制：
+
+```javascript
+// 为两个方法添加超时逻辑
+async generateStory(language) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000); // 15s
+
+  try {
+    const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: { ... },
+      body: JSON.stringify({ ... }),
+      signal: controller.signal, // ← 添加这一行
+    });
+
+    clearTimeout(timeout);
+    
+    if (!response.ok) {
+      throw new Error(`OpenRouter API 错误: ${response.status}`);
+    }
+    // ... 其余逻辑不变
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error.name === 'AbortError') {
+      throw new Error('API_TIMEOUT');
+    }
+    throw error;
+  }
+}
+
+// judgeQuestion 同样添加（超时改为 10s）
+```
+
+**超时设定**：
+- `generateStory`：15 秒（故事生成通常 3-8 秒）
+- `judgeQuestion`：10 秒（问题判断通常 1-3 秒）
+
+**Handler 层配合修改**：
+在 `callbacks.js` 和 `messages.js` 中捕获 `API_TIMEOUT`：
+
+```javascript
+// src/handlers/callbacks.js
+catch (error) {
+  if (error.message === 'GAME_IN_PROGRESS') {
+    await ctx.reply(t(language, 'gameInProgress'));
+  } else if (error.message === 'API_TIMEOUT') {
+    await ctx.reply(t(language, 'networkError'));
+  } else {
+    console.error('Error generating story:', error);
+    await ctx.reply(t(language, 'generationFailed'));
+  }
+}
+```
+
+**关键改动**：
+1. 使用 `AbortController` 实现超时
+2. 捕获 `AbortError` 并转换为 `API_TIMEOUT`
+3. Handler 层统一映射到 "networkError" 提示
+
+**影响分析**：
+- ✅ 避免请求无限挂起
+- ✅ 用户得到明确的超时提示
+- ✅ 防止 Railway 实例因请求堆积耗尽资源
+- ⚠️ 超时后用户需要重新 `/newgame`（可接受）
+
+**验收标准**：
+- [ ] 模拟网络延迟 > 15s，用户看到 "networkError" 而不是无响应
+- [ ] 正常网络下功能不受影响
+- [ ] 超时后重新发起请求能正常工作
+
+**参考**：PRD v1.1 - 问题 2
+
+---
 
 ---
 
