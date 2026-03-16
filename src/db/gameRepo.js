@@ -41,8 +41,7 @@ export const gameRepo = {
    */
   async endGame(chatId) {
     await pool.execute(
-      `UPDATE games SET status = 'ended', ended_at = NOW()
-       WHERE chat_id = ? AND status = 'playing'`,
+      `DELETE FROM games WHERE chat_id = ? AND status = 'playing'`,
       [chatId]
     );
   },
