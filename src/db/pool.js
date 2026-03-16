@@ -30,7 +30,6 @@ export async function initDatabase() {
       id INT AUTO_INCREMENT PRIMARY KEY,
       chat_id BIGINT NOT NULL UNIQUE,
       language VARCHAR(2) NOT NULL COMMENT 'en 或 ru',
-      difficulty VARCHAR(10) NOT NULL COMMENT 'easy / medium / hard',
       scenario LONGTEXT NOT NULL COMMENT '场景描述',
       truth LONGTEXT NOT NULL COMMENT '完整故事/汤底',
       questions_count INT DEFAULT 0 COMMENT '提问次数',
@@ -42,6 +41,18 @@ export async function initDatabase() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `;
 
+  // 建表
   await pool.execute(createTableSQL);
+
+  // 迁移：如果 difficulty 字段不存在就加上（已存在则忽略错误）
+  await pool
+    .execute(
+      `
+    ALTER TABLE games 
+    ADD COLUMN IF NOT EXISTS difficulty VARCHAR(10) NOT NULL DEFAULT 'medium'
+  `
+    )
+    .catch(() => {});
+
   console.log('✅ 数据库表初始化完成');
 }
