@@ -44,15 +44,19 @@ export async function initDatabase() {
   // 建表
   await pool.execute(createTableSQL);
 
-  // 迁移：如果 difficulty 字段不存在就加上（已存在则忽略错误）
-  await pool
-    .execute(
-      `
-    ALTER TABLE games 
-    ADD COLUMN IF NOT EXISTS difficulty VARCHAR(10) NOT NULL DEFAULT 'medium'
-  `
-    )
-    .catch(() => {});
+  // 迁移：检查 difficulty 字段是否存在，不存在就加上
+  try {
+    await pool.execute(`
+      ALTER TABLE games ADD COLUMN difficulty VARCHAR(10) NOT NULL DEFAULT 'medium'
+    `);
+    console.log('✅ difficulty 字段迁移完成');
+  } catch (err) {
+    if (err.code === 'ER_DUP_FIELDNAME') {
+      // 字段已存在，忽略
+    } else {
+      throw err;
+    }
+  }
 
   console.log('✅ 数据库表初始化完成');
 }
