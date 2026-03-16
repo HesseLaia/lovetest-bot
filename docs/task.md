@@ -1168,4 +1168,473 @@ Do not include any other text or explanation.`;
 
 ---
 
+## Phase 10：难度选择功能（v1.1）
+
+### 功能概述
+
+**新游戏流程**：`/newgame` → 选语言 → **选难度** → 生成故事
+
+**三个难度**：
+- **🟢 Easy（简单）**：逻辑直接，5-10 个问题可解，适合新手
+- **🟡 Medium（中等）**：有 1-2 个反转，10-20 个问题，主流体验
+- **🔴 Hard（困难）**：多层反转、误导性强、猎奇黑暗风格，20+ 问题
+
+**数据库变更**：
+- 新增 `difficulty` 字段（VARCHAR(10)），存储 'easy' / 'medium' / 'hard'
+
+---
+
+### Task 10.1：数据库添加 difficulty 字段
+
+**目标**：在 `games` 表中添加 `difficulty` 字段支持
+
+**依赖**：无
+
+**修改文件**：
+- `src/db/pool.js` - 修改 `initDatabase()` 的建表 SQL
+- `src/db/gameRepo.js` - 修改 `create()` 方法签名
+
+**具体改动**：
+
+#### 1. `src/db/pool.js` - 修改建表 SQL
+
+在 `CREATE TABLE` 语句中添加 `difficulty` 字段：
+
+```sql
+CREATE TABLE IF NOT EXISTS games (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  chat_id BIGINT NOT NULL UNIQUE,
+  language VARCHAR(2) NOT NULL COMMENT 'en 或 ru',
+  difficulty VARCHAR(10) NOT NULL COMMENT 'easy / medium / hard',  -- 新增此行
+  scenario LONGTEXT NOT NULL COMMENT '场景描述',
+  truth LONGTEXT NOT NULL COMMENT '完整故事/汤底',
+  questions_count INT DEFAULT 0 COMMENT '提问次数',
+  status VARCHAR(20) NOT NULL COMMENT 'playing 或 ended',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  ended_at TIMESTAMP NULL,
+  INDEX idx_chat_id (chat_id),
+  INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+```
+
+#### 2. `src/db/gameRepo.js` - 修改 create 方法
+
+```javascript
+/**
+ * 创建新游戏
+ */
+async create(chatId, language, difficulty, scenario, truth) {
+  const [result] = await pool.execute(
+    `INSERT INTO games (chat_id, language, difficulty, scenario, truth, status)
+     VALUES (?, ?, ?, ?, ?, 'playing')`,
+    [chatId, language, difficulty, scenario, truth]
+  );
+  return result.insertId;
+}
+```
+
+**数据库迁移**（如果生产环境已有表）：
+
+```sql
+-- 如果表已存在，执行此 SQL（Railway MySQL 控制台）
+ALTER TABLE games ADD COLUMN difficulty VARCHAR(10) NOT NULL DEFAULT 'medium';
+```
+
+⚠️ **注意**：由于你们使用的是删除式 `endGame`，表里应该没有历史数据，可以直接删表重建：
+```sql
+DROP TABLE IF EXISTS games;
+```
+然后重启 bot，会自动用新结构建表。
+
+**验收标准**：
+- [ ] 执行 `DESCRIBE games;` 能看到 `difficulty VARCHAR(10)` 字段
+- [ ] `gameRepo.create(chatId, 'en', 'hard', scenario, truth)` 能成功插入
+- [ ] 已有表需要执行迁移 SQL 或删表重建
+
+**参考**：
+- 当前 `pool.js` 实现（`src/db/pool.js` L27-L46）
+- 当前 `gameRepo.js` 实现（`src/db/gameRepo.js` L8-L15）
+
+---
+
+### Task 10.2：多语言文本新增难度相关提示
+
+**目标**：在 i18n 中添加难度选择的提示文本
+
+**依赖**：无
+
+**修改文件**：`src/messages/i18n.js`
+
+**具体改动**：
+
+在 `messages.en` 和 `messages.ru` 对象中添加以下 key：
+
+```javascript
+// messages.en 中添加
+selectDifficulty: '🎯 Select difficulty:',
+difficultyEasy: '🟢 Easy',
+difficultyMedium: '🟡 Medium',
+difficultyHard: '🔴 Hard',
+difficultyEasyDesc: 'Simple logic, 5-10 questions',
+difficultyMediumDesc: '1-2 twists, 10-20 questions',
+difficultyHardDesc: 'Multi-layered, dark themes, 20+ questions',
+
+// messages.ru 中添加
+selectDifficulty: '🎯 Выберите сложность:',
+difficultyEasy: '🟢 Легко',
+difficultyMedium: '🟡 Средне',
+difficultyHard: '🔴 Сложно',
+difficultyEasyDesc: 'Простая логика, 5-10 вопросов',
+difficultyMediumDesc: '1-2 поворота, 10-20 вопросов',
+difficultyHardDesc: 'Многослойный, темные темы, 20+ вопросов',
+```
+
+**验收标准**：
+- [ ] `t('en', 'selectDifficulty')` 返回 `'🎯 Select difficulty:'`
+- [ ] `t('ru', 'difficultyHard')` 返回 `'🔴 Сложно'`
+- [ ] 所有 7 个新 key 在英语和俄语中都有对应翻译
+- [ ] emoji 显示正常
+
+**参考**：
+- 当前 `i18n.js` 实现（`src/messages/i18n.js`）
+
+---
+
+### Task 10.3：AI 客户端根据难度调整 Prompt
+
+**目标**：`aiClient.generateStory()` 接收 difficulty 参数并调整 prompt
+
+**依赖**：Task 9.1（已完成，使用了类型系统）
+
+**修改文件**：`src/core/aiClient.js`
+
+**具体改动**：
+
+```javascript
+/**
+ * 生成故事（场景 + 汤底）
+ * @param {string} language - 'en' 或 'ru'
+ * @param {string} difficulty - 'easy' / 'medium' / 'hard'
+ * @returns {Promise<{scenario: string, truth: string}>}
+ */
+async generateStory(language, difficulty) {
+  const languageMap = {
+    en: 'English',
+    ru: 'Russian',
+  };
+
+  const types = [
+    'Dark/Disturbing: involves death, crime, psychological horror',
+    'Bizarre/Absurd: extremely weird logic, unexpected twists',
+    'Gore/Thriller: graphic but tasteful, shocking revelations',
+    "Mind-bending: reality isn't what it seems, unreliable narrator",
+    'Dark Humor: morbid but darkly funny',
+  ];
+  const randomType = types[Math.floor(Math.random() * types.length)];
+
+  // 根据难度调整 prompt
+  const difficultyPrompts = {
+    easy: `Difficulty: EASY
+- Simple, straightforward logic
+- Minimal misdirection
+- Should be solvable in 5-10 questions
+- Avoid overly complex twists
+- Type: Light mystery or simple paradox`,
+    
+    medium: `Difficulty: MEDIUM
+- 1-2 unexpected plot twists
+- Some misdirection but not overwhelming
+- Should require 10-20 questions to solve
+- Balanced complexity
+- Type: ${randomType}`,
+    
+    hard: `Difficulty: HARD
+- Multiple layers of misdirection and plot twists
+- Dark, disturbing, or mind-bending themes preferred
+- Requires 20+ questions and deep reasoning
+- The obvious explanation should be completely wrong
+- Type: ${randomType}`,
+  };
+
+  const difficultyPrompt = difficultyPrompts[difficulty] || difficultyPrompts.medium;
+
+  const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
+Generate a puzzle in ${languageMap[language]} with the following requirements:
+
+${difficultyPrompt}
+
+Requirements:
+1. Scenario: 50-100 words, mysterious and intriguing
+2. Truth: 150-300 words, complete explanation
+3. The puzzle must be solvable through yes/no questions
+4. Tailor complexity strictly to the difficulty level specified above
+
+FORBIDDEN scenarios (do NOT use):
+- Albatross/turtle soup stories
+- Elevator scenarios
+- Locked room suicide
+- Bartender cures hiccups with gun
+- Any variation of these classic puzzles
+
+Return ONLY a valid JSON object with this exact format:
+{"scenario": "...", "truth": "..."}
+Do not include any other text or explanation.`;
+
+  // ... 其余超时和解析逻辑不变
+}
+```
+
+**关键点**：
+- Easy 难度不使用 Task 9.1 的随机类型，固定为 "Light mystery"
+- Medium 和 Hard 使用 Task 9.1 的 5 种随机类型
+- Hard 难度优先选择 Dark/Gore/Mind-bending 风格（通过 prompt 引导）
+
+**验收标准**：
+- [ ] `generateStory('en', 'easy')` 生成的故事逻辑简单，无明显反转
+- [ ] `generateStory('en', 'medium')` 生成的故事有 1-2 个反转
+- [ ] `generateStory('en', 'hard')` 生成的故事有多层反转和强误导
+- [ ] 三个难度的故事风格区分明显
+- [ ] Easy 难度能在 5-10 问内猜中（实测 3-5 局验证）
+- [ ] Hard 难度需要 15+ 问才能猜中（实测 3-5 局验证）
+
+**参考**：
+- 当前 `aiClient.generateStory` 实现（`src/core/aiClient.js` L10-L78）
+- Task 9.1 的类型系统设计
+
+---
+
+### Task 10.4：游戏逻辑层支持难度参数
+
+**目标**：`gameLogic.startGame()` 接收 difficulty 并传递给 AI 和数据库
+
+**依赖**：Task 10.1, Task 10.3
+
+**修改文件**：`src/core/gameLogic.js`
+
+**具体改动**：
+
+```javascript
+/**
+ * 启动新游戏
+ */
+async startGame(chatId, language, difficulty) {
+  try {
+    // 生成故事时传入 difficulty
+    const { scenario, truth } = await aiClient.generateStory(language, difficulty);
+    
+    // 创建游戏时传入 difficulty
+    await gameRepo.create(chatId, language, difficulty, scenario, truth);
+    
+    return { scenario, truth };
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw new Error('GAME_IN_PROGRESS');
+    }
+    throw error;
+  }
+}
+```
+
+**关键点**：
+- 方法签名从 `startGame(chatId, language)` 改为 `startGame(chatId, language, difficulty)`
+- 错误处理逻辑（`ER_DUP_ENTRY`、超时等）保持不变
+- 返回值结构不变
+
+**验收标准**：
+- [ ] `startGame(chatId, 'en', 'hard')` 能成功创建 hard 难度游戏
+- [ ] 数据库中 `difficulty` 字段正确存储为 `'hard'`
+- [ ] 错误处理逻辑（`GAME_IN_PROGRESS`、`API_TIMEOUT`）正常工作
+- [ ] 不传 difficulty 参数会报错（参数必需）
+
+**参考**：
+- 当前 `gameLogic.startGame` 实现（`src/core/gameLogic.js` L9-L22）
+- Task 8.1 的并发控制逻辑
+
+---
+
+### Task 10.5：Handler 层新增难度选择流程
+
+**目标**：在语言选择后弹出难度选择键盘，点击难度后生成故事
+
+**依赖**：Task 10.2, Task 10.4
+
+**修改文件**：`src/handlers/callbacks.js`
+
+**具体改动**：
+
+#### 1. 修改现有的语言选择回调（不再直接生成故事）
+
+```javascript
+// 语言选择回调（callback_data: lang_en / lang_ru）
+bot.callbackQuery(/^lang_(en|ru)$/, async (ctx) => {
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+
+  const language = ctx.match[1]; // 'en' 或 'ru'
+
+  await ctx.answerCallbackQuery();
+  
+  // ✅ 显示难度选择键盘，而不是直接生成故事
+  const keyboard = new InlineKeyboard()
+    .text(t(language, 'difficultyEasy'), `diff_${language}_easy`)
+    .text(t(language, 'difficultyMedium'), `diff_${language}_medium`)
+    .text(t(language, 'difficultyHard'), `diff_${language}_hard`);
+  
+  await ctx.editMessageText(t(language, 'selectDifficulty'), {
+    reply_markup: keyboard,
+  });
+});
+```
+
+#### 2. 新增难度选择回调（生成故事）
+
+```javascript
+// 难度选择回调（callback_data: diff_en_easy / diff_ru_medium / diff_en_hard 等）
+bot.callbackQuery(/^diff_(en|ru)_(easy|medium|hard)$/, async (ctx) => {
+  const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+  if (!chatId) return;
+
+  const language = ctx.match[1]; // 'en' 或 'ru'
+  const difficulty = ctx.match[2]; // 'easy' / 'medium' / 'hard'
+
+  await ctx.answerCallbackQuery();
+  await ctx.editMessageText(t(language, 'generating'));
+
+  try {
+    const { scenario } = await gameLogic.startGame(chatId, language, difficulty);
+    const message = messageBuilder.buildScenarioMessage(language, scenario);
+    await ctx.reply(message);
+  } catch (error) {
+    if (error.message === 'GAME_IN_PROGRESS') {
+      await ctx.reply(t(language, 'gameInProgress'));
+    } else if (error.message === 'API_TIMEOUT') {
+      await ctx.reply(t(language, 'networkError'));
+    } else {
+      console.error('Error generating story:', error);
+      await ctx.reply(t(language, 'generationFailed'));
+    }
+  }
+});
+```
+
+**关键点**：
+- 语言选择回调不再调用 `gameLogic.startGame`，只显示难度键盘
+- 难度选择回调的错误处理与原语言回调完全一致
+- Callback 数据格式：`diff_{language}_{difficulty}`，方便正则提取
+- 使用 `editMessageText` 更新消息，避免刷屏
+
+**验收标准**：
+- [ ] 点击语言按钮后显示三个难度按钮（🟢 🟡 🔴）
+- [ ] 难度按钮文本使用对应语言（英语/俄语）
+- [ ] 点击难度按钮后显示 "⏳ Generating story..."
+- [ ] 成功生成对应难度的故事
+- [ ] 错误处理（`GAME_IN_PROGRESS`、`API_TIMEOUT` 等）正常工作
+- [ ] 语言+难度组合共 6 种（en/ru × easy/medium/hard）全部测试通过
+
+**参考**：
+- 当前 `callbacks.js` 实现（`src/handlers/callbacks.js`）
+- Task 8.2 的超时错误处理
+
+---
+
+### Task 10.6：集成测试和文档更新
+
+**目标**：测试 6 种语言+难度组合，更新相关文档
+
+**依赖**：Task 10.1 ~ 10.5 全部完成
+
+**测试矩阵**（6 种组合）：
+
+| 语言 | 难度 | 验收标准 |
+|------|------|----------|
+| English | Easy | 逻辑简单，5-10 问可解 |
+| English | Medium | 有 1-2 个反转，10-20 问 |
+| English | Hard | 多层反转，黑暗风格，20+ 问 |
+| Русский | Easy | 逻辑简单，5-10 问可解 |
+| Русский | Medium | 有 1-2 个反转，10-20 问 |
+| Русский | Hard | 多层反转，黑暗风格，20+ 问 |
+
+**测试流程**：
+1. 在测试群组执行 `/newgame`
+2. 选择语言（English / Русский）
+3. 选择难度（Easy / Medium / Hard）
+4. 检查生成的故事是否符合难度要求
+5. 实际玩 2-3 轮，评估难度是否合理
+6. 记录任何问题到 `changelog.md`
+
+**需要更新的文档**：
+
+1. **`docs/prd.md`**：
+   - 修改 "游戏流程 → 1. 启动游戏" 部分，添加难度选择步骤
+   - 更新 `games` 表结构，添加 `difficulty` 字段
+   - 在 "MVP 不包含功能" 中删除 "难度选择"，标记为 ✅ v1.1 已实现
+
+2. **`docs/tech_design.md`**（可选）：
+   - 更新数据库表结构说明
+   - 更新 `gameLogic.startGame` 方法签名说明
+
+3. **`README.md`**（可选）：
+   - 在功能列表中添加 "三种难度选择"
+
+**验收标准**：
+- [ ] 6 种语言+难度组合全部测试通过
+- [ ] Easy 难度确实比 Hard 简单（通过实际游戏验证）
+- [ ] 难度选择不影响其他命令（`/guess`、`/reveal`、`/cancel` 等）
+- [ ] 文档已更新
+- [ ] 无新增 linter 错误
+- [ ] 代码已提交到 git
+
+**Git 提交建议**：
+```bash
+git add src/db/pool.js src/db/gameRepo.js src/messages/i18n.js src/core/aiClient.js src/core/gameLogic.js src/handlers/callbacks.js
+git commit -m "feat: Task 10.1-10.5 - 添加三档难度选择功能"
+
+git add docs/prd.md docs/task.md
+git commit -m "docs: 更新 PRD 和 task 文档，添加难度选择说明"
+
+git push origin HEAD
+```
+
+---
+
+## 📊 Phase 10 总结
+
+### 改动范围
+
+| 类型 | 数量 | 文件列表 |
+|------|------|----------|
+| 数据库变更 | 1 个字段 | `games.difficulty` |
+| 代码文件 | 5 个 | pool.js, gameRepo.js, i18n.js, aiClient.js, gameLogic.js, callbacks.js |
+| 文档文件 | 2-3 个 | prd.md, tech_design.md（可选）, README.md（可选）|
+| 新增代码 | ~120 行 | 主要在 callbacks.js 和 aiClient.js |
+| 修改代码 | ~40 行 | 方法签名和 SQL |
+
+### 兼容性确认
+
+✅ **不影响现有流程**：
+- `/newgame` 命令入口不变
+- 语言选择逻辑保持不变，只是后面多了一步难度选择
+- 其他命令（`/guess`、`/reveal`、`/cancel`、`/help`）完全不受影响
+- 提问流程（回复 bot 消息）完全不受影响
+- 错误处理逻辑复用现有机制
+
+✅ **向下兼容**：
+- Callback 数据格式不冲突（`lang_*` vs `diff_*_*`）
+- 数据库字段新增，不影响现有查询
+- i18n 函数不需要改动
+
+⚠️ **需要注意**：
+- 已有数据库需要执行迁移 SQL 或删表重建
+- 需要测试 6 种语言+难度组合
+- Easy/Hard 难度的故事质量需要实测调优
+
+### 风险评估
+
+- 🟢 **技术风险**：低（都是扩展性改动，无破坏性）
+- 🟡 **测试成本**：中（需要测试 6 种组合）
+- 🟢 **用户体验**：正面（提供更多选择，满足不同水平玩家）
+- 🟢 **维护成本**：低（代码结构清晰，易于维护）
+
+---
+
 **任务拆解完成，准备开发！** 🚀
