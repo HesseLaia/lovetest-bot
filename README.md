@@ -33,7 +33,7 @@
 
 | 命令 | 说明 |
 |------|------|
-| `/newgame` | 启动新游戏，选择语言 |
+| `/newgame` | 启动新游戏，选择语言和难度（Easy/Medium/Hard） |
 | `/guess <你的猜测>` | 提交完整猜测并结束游戏 |
 | `/reveal` | 直接查看答案 |
 | `/cancel` | 取消当前游戏 |
@@ -46,6 +46,9 @@
 Bot: 🌍 Please select a language: [English] [Русский]
 
 用户: [点击 English]
+Bot: 🎯 Select difficulty: [🟢 Easy] [🟡 Medium] [🔴 Hard]
+
+用户: [点击 Medium]
 Bot: 🎮 Game started! Here's your scenario:
 
      A man lies dead in a field. Beside him is an unopened package. 

@@ -44,10 +44,14 @@
 
 ### 1. 启动游戏
 
+**v1.1 游戏启动流程**：
+
 ```
 用户: /newgame
 Bot: 显示 inline keyboard [English] [Русский]
 用户: 点击语言按钮
+Bot: 显示 inline keyboard [🟢 Easy] [🟡 Medium] [🔴 Hard]
+用户: 点击难度按钮
 Bot: ⏳ 正在生成故事...
 Bot: 📖 场景描述
      [生成的场景文本]
@@ -136,7 +140,7 @@ Bot: ❌ 游戏已取消
 ### 生成故事 Prompt
 
 **要求**：
-- 难度：固定**中等**
+- 难度：根据用户选择（Easy / Medium / Hard）
 - 语言：根据用户选择（英语 / 俄语）
 - 返回格式：**必须是有效 JSON**
 
@@ -201,6 +205,7 @@ CREATE TABLE games (
   id INT AUTO_INCREMENT PRIMARY KEY,
   chat_id BIGINT NOT NULL UNIQUE,
   language VARCHAR(2) NOT NULL COMMENT 'en 或 ru',
+  difficulty VARCHAR(10) NOT NULL COMMENT 'easy / medium / hard',
   scenario LONGTEXT NOT NULL COMMENT '场景描述',
   truth LONGTEXT NOT NULL COMMENT '完整故事/汤底',
   questions_count INT DEFAULT 0 COMMENT '提问次数',
@@ -215,6 +220,7 @@ CREATE TABLE games (
 **字段说明**：
 - `chat_id`：Telegram 群组 ID（唯一索引，一个群只能一场游戏）
 - `language`：`en` 或 `ru`
+- `difficulty`：`easy` / `medium` / `hard`
 - `scenario`、`truth`：用 `LONGTEXT` 存储（避免 JSON 类型坑）
 - `questions_count`：提问次数统计（不存储具体问题内容）
 - `status`：`playing`（进行中）或 `ended`（已结束）
@@ -244,7 +250,7 @@ console.log(game.scenario); // 直接是字符串
 
 ## 🚫 MVP 不包含功能（后续迭代）
 
-- ❌ 难度选择（固定中等难度）
+- ✅ 难度选择（v1.1 已实现：Easy / Medium / Hard）
 - ❌ 提示系统（卡住时请求线索）
 - ❌ 用户数据 / 排行榜
 - ❌ 历史游戏记录查询
