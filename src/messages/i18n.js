@@ -6,6 +6,15 @@ export const messages = {
     gameStarted: '🎮 Game started! Here\'s your scenario:\n\n',
     askHint: '\n\n💡 Reply to this message to ask yes/no questions',
 
+    // 难度选择
+    selectDifficulty: '🎯 Select difficulty:',
+    difficultyEasy: '🟢 Easy',
+    difficultyMedium: '🟡 Medium',
+    difficultyHard: '🔴 Hard',
+    difficultyEasyDesc: 'Simple logic, 5-10 questions',
+    difficultyMediumDesc: '1-2 twists, 10-20 questions',
+    difficultyHardDesc: 'Multi-layered, dark themes, 20+ questions',
+
     answerYes: '✅ Yes',
     answerNo: '❌ No',
     answerIrrelevant: '🤷 Irrelevant',
@@ -49,6 +58,15 @@ Good luck! 🍀`,
     generating: '⏳ Генерация истории...',
     gameStarted: '🎮 Игра началась! Вот ваш сценарий:\n\n',
     askHint: '\n\n💡 Ответьте на это сообщение, чтобы задать вопросы да/нет',
+
+    // Выбор сложности
+    selectDifficulty: '🎯 Выберите сложность:',
+    difficultyEasy: '🟢 Легко',
+    difficultyMedium: '🟡 Средне',
+    difficultyHard: '🔴 Сложно',
+    difficultyEasyDesc: 'Простая логика, 5-10 вопросов',
+    difficultyMediumDesc: '1-2 поворота, 10-20 вопросов',
+    difficultyHardDesc: 'Многослойный, темные темы, 20+ вопросов',
 
     answerYes: '✅ Да',
     answerNo: '❌ Нет',
