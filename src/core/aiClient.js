@@ -5,9 +5,10 @@ export const aiClient = {
   /**
    * 生成故事（场景 + 汤底）
    * @param {string} language - 'en' 或 'ru'
+   * @param {string} [difficulty='medium'] - 'easy' | 'medium' | 'hard'
    * @returns {Promise<{scenario: string, truth: string}>}
    */
-  async generateStory(language) {
+  async generateStory(language, difficulty = 'medium') {
     const languageMap = {
       en: 'English',
       ru: 'Russian',
@@ -22,8 +23,33 @@ export const aiClient = {
     ];
     const randomType = types[Math.floor(Math.random() * types.length)];
 
+    const difficultyPrompts = {
+      easy: `Difficulty: EASY
+- Simple, straightforward logic
+- Minimal misdirection
+- Should be solvable in 5-10 questions
+- Avoid overly complex twists
+- Type: Light mystery or simple paradox`,
+      medium: `Difficulty: MEDIUM
+- 1-2 unexpected plot twists
+- Some misdirection but not overwhelming
+- Should require 10-20 questions to solve
+- Balanced complexity
+- Type: ${randomType}`,
+      hard: `Difficulty: HARD
+- Multiple layers of misdirection and plot twists
+- Dark, disturbing, or mind-bending themes preferred
+- Requires 20+ questions and deep reasoning
+- The obvious explanation should be completely wrong
+- Type: ${randomType}`,
+    };
+
+    const difficultyPrompt = difficultyPrompts[difficulty] || difficultyPrompts.medium;
+
     const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
 Generate a puzzle in ${languageMap[language]} with the following requirements:
+
+${difficultyPrompt}
 
 Puzzle Type (MUST follow this style):
 ${randomType}
