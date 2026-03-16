@@ -1,4 +1,5 @@
 // bot.js
+import 'dotenv/config';
 import { Bot } from 'grammy';
 import { config, validateConfig } from './src/config/env.js';
 import { testConnection, initDatabase } from './src/db/pool.js';
