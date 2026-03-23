@@ -58,5 +58,33 @@ export async function initDatabase() {
     }
   }
 
+  // 迁移：新增 soup_type（生产库已有 difficulty，不在本 task 重复添加）
+  try {
+    await pool.execute(`
+      ALTER TABLE games ADD COLUMN soup_type VARCHAR(10) NOT NULL DEFAULT 'clear' AFTER difficulty
+    `);
+    console.log('✅ soup_type 字段迁移完成');
+  } catch (err) {
+    if (err.code === 'ER_DUP_FIELDNAME') {
+      // 字段已存在，忽略
+    } else {
+      throw err;
+    }
+  }
+
+  // 迁移：新增 hint_count
+  try {
+    await pool.execute(`
+      ALTER TABLE games ADD COLUMN hint_count INT DEFAULT 0 AFTER questions_count
+    `);
+    console.log('✅ hint_count 字段迁移完成');
+  } catch (err) {
+    if (err.code === 'ER_DUP_FIELDNAME') {
+      // 字段已存在，忽略
+    } else {
+      throw err;
+    }
+  }
+
   console.log('✅ 数据库表初始化完成');
 }

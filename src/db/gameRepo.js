@@ -7,14 +7,15 @@ export const gameRepo = {
    * @param {number} chatId
    * @param {string} language - 'en' | 'ru'
    * @param {string} [difficulty='medium'] - 'easy' | 'medium' | 'hard'
+   * @param {string} [soupType='clear'] - 'clear' | 'red' | 'black'
    * @param {string} scenario
    * @param {string} truth
    */
-  async create(chatId, language, difficulty = 'medium', scenario, truth) {
+  async create(chatId, language, difficulty = 'medium', soupType = 'clear', scenario, truth) {
     const [result] = await pool.execute(
-      `INSERT INTO games (chat_id, language, difficulty, scenario, truth, status)
-       VALUES (?, ?, ?, ?, ?, 'playing')`,
-      [chatId, language, difficulty, scenario, truth]
+      `INSERT INTO games (chat_id, language, difficulty, soup_type, scenario, truth, status)
+       VALUES (?, ?, ?, ?, ?, ?, 'playing')`,
+      [chatId, language, difficulty, soupType, scenario, truth]
     );
     return result.insertId;
   },
@@ -36,6 +37,17 @@ export const gameRepo = {
   async incrementQuestions(chatId) {
     await pool.execute(
       `UPDATE games SET questions_count = questions_count + 1
+       WHERE chat_id = ? AND status = 'playing'`,
+      [chatId]
+    );
+  },
+
+  /**
+   * 增加提示次数（成功生成 hint 后调用）
+   */
+  async incrementHints(chatId) {
+    await pool.execute(
+      `UPDATE games SET hint_count = hint_count + 1
        WHERE chat_id = ? AND status = 'playing'`,
       [chatId]
     );

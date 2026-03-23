@@ -1643,3 +1643,181 @@ git push origin HEAD
 ---
 
 **任务拆解完成，准备开发！** 🚀
+
+---
+
+## Phase 11：PRD 新增功能落地（v1.2）
+
+### 功能概述
+
+基于最新 PRD，新增三条独立功能线：
+1. 难度重新校准（Prompt 策略）
+2. 汤类型选择（流程 + `soup_type` 存储）
+3. `/hint` 提示功能（命令 + `hint_count` 存储）
+
+关键约束（必须遵守）：
+- 启动流程：`/newgame` → 选语言 → 选难度 → 选汤类型 → 生成故事
+- 多步向导阶段不写库；仅在 AI 成功生成后 `INSERT status='playing'`
+- 并发依赖 `chat_id UNIQUE` + 捕获 `ER_DUP_ENTRY`
+- 向导中再次 `/newgame` 直接重置向导（重新弹语言键盘）
+
+---
+
+### Task 11.1：难度重新校准（Prompt 策略）
+
+**目标**：按 PRD 新定义重做 Easy / Medium / Hard 生成策略（仅 Prompt 约束，不做产品层硬计数器）
+
+**依赖**：无
+
+**改动文件**：
+- `src/core/aiClient.js`
+- `src/core/gameLogic.js`（方法签名透传 difficulty）
+- `docs/tech_design.md`（后续同步）
+
+**具体实现要点**：
+1. `generateStory(language, difficulty, soupType)` 支持难度参数（如当前仍是旧签名需升级）。
+2. Prompt 按难度约束题量与结构：
+   - Easy：5-10 问、单核心反转、人物 ≤2、直给
+   - Medium：15-25 问、1-2 误导细节
+   - Hard：30+ 问、多层反转、强误导
+3. 明确写入：题数区间是 AI 写作约束，不是运行时题数限制。
+4. 按难度控制字数区间：
+   - Easy：scenario 30-60，truth 80-150
+   - Medium：scenario 50-100，truth 150-250
+   - Hard：scenario 80-150，truth 250-400
+
+**验收标准**：
+- [ ] `generateStory('en','easy','clear')` 结果整体符合 Easy 风格
+- [ ] `generateStory('en','medium','red')` 结果整体符合 Medium 风格
+- [ ] `generateStory('en','hard','black')` 结果整体符合 Hard 风格
+- [ ] 三档字数约束在多数样本中生效（抽样 10 次）
+- [ ] 返回格式仍为合法 JSON `{scenario, truth}`
+
+**依赖关系**：
+- 下游 Task 11.2 依赖本任务（流程最终调用生成时需用新签名）
+
+---
+
+### Task 11.2：汤类型选择流程 + `soup_type` 迁移
+
+**目标**：在“难度之后”增加汤类型选择，并把 `soup_type` 持久化到 `games`
+
+**依赖**：Task 11.1
+
+**改动文件**：
+- `src/db/pool.js`
+- `src/db/gameRepo.js`
+- `src/handlers/callbacks.js`
+- `src/handlers/commands.js`
+- `src/messages/i18n.js`
+- `docs/tech_design.md`（后续同步）
+
+**具体实现要点**：
+1. **数据库迁移**（生产库已有 `difficulty`，这里只新增两个字段中的 `soup_type` 部分）：
+```sql
+ALTER TABLE games 
+  ADD COLUMN soup_type VARCHAR(10) NOT NULL DEFAULT 'clear' AFTER difficulty;
+```
+2. `gameRepo.create(...)` 扩展为包含 `soup_type` 插入。
+3. 回调流程改成三级：
+   - `lang_*` → 弹难度键盘
+   - `diff_*` → 弹汤类型键盘
+   - `soup_*` → 才触发生成与写库
+4. 汤类型与难度独立组合（允许 Easy+黑汤、Hard+清汤）。
+5. 向导状态不写库；只有“生成成功后”才 INSERT。
+6. 向导中再次 `/newgame`：因无 playing 记录，直接重置向导。
+7. i18n 补齐并统一管理（本任务内明确包含难度与汤类型 key）：
+   - 难度 key（供 callbacks 使用）：
+     - `selectDifficulty: '⚡ Select difficulty:'`
+     - `difficultyEasy: '🟢 Easy'`
+     - `difficultyMedium: '🟡 Medium'`
+     - `difficultyHard: '🔴 Hard'`
+     - 俄语同语义对应
+   - 汤类型 key：
+     - EN：`🍵 Clear Soup` / `🔴 Red Soup` / `⚫ Black Soup`
+     - RU：`🍵 Светлый суп` / `🔴 Красный суп` / `⚫ Чёрный суп`
+
+**验收标准**：
+- [ ] `/newgame` 后顺序为：语言 → 难度 → 汤类型
+- [ ] 汤类型在难度之后出现，且 2×3×3 组合可选
+- [ ] 生成成功后数据库存在 `status='playing'`，并写入正确 `soup_type`
+- [ ] 向导中再次 `/newgame` 会重置向导
+- [ ] 已有 playing 时 `/newgame` 仍提示 gameInProgress
+
+**依赖关系**：
+- 下游 Task 11.3 依赖本任务（共享迁移与 i18n 结构）
+
+---
+
+### Task 11.3：`/hint` 命令 + `hint_count` 迁移
+
+**目标**：实现每局 3 次方向性提示，并持久化 `hint_count`
+
+**依赖**：Task 11.2
+
+**改动文件**：
+- `src/db/pool.js`
+- `src/db/gameRepo.js`
+- `src/core/aiClient.js`
+- `src/core/gameLogic.js`
+- `src/handlers/commands.js`（注册新命令）
+- `src/messages/i18n.js`
+- `src/messages/builder.js`
+- `docs/tech_design.md`（后续同步）
+
+**具体实现要点**：
+1. **数据库迁移**（生产库已有 `difficulty`）：
+```sql
+ALTER TABLE games 
+  ADD COLUMN hint_count INT DEFAULT 0 AFTER questions_count;
+```
+2. 在 `commands.js` 注册 `/hint`。
+3. `gameLogic.getHint(chatId)`：
+   - 检查当前有无 playing
+   - `hint_count >= 3` 直接返回“已用完”
+   - 调用 AI 生成提示（输入仅 `scenario` + `questions_count` + `language`）
+4. 提示生成规则：
+   - 不传 `truth`
+   - 纯自然语言，不用 JSON
+   - 不超过 2 句话
+   - 不直接透露关键人物/关键动作/结局
+5. 计数规则：
+   - **仅 AI 成功返回提示时**递增 `hint_count`
+   - 超时/失败不扣次数，用户可立即重试
+6. `questions_count` 语义对齐 PRD：
+   - 仅统计成功完成判断流程的提问
+   - `IRRELEVANT` 也计入
+   - `/hint` 传入该字段当前值
+7. `/help` 文案同步补充 `/hint` 与汤类型说明（EN/RU）。
+
+**验收标准**：
+- [ ] `/hint` 在游戏中可正常返回提示，且语言与 `game.language` 一致
+- [ ] 前 3 次成功提示后，第 4 次请求返回“本局提示已用完”
+- [ ] AI 超时/失败时 `hint_count` 不增加，且可立即重试
+- [ ] `/hint` 无游戏时返回 noGame
+- [ ] 数据库 `hint_count` 与实际成功提示次数一致
+- [ ] `/help` 已包含 `/hint` 和汤类型说明
+
+**依赖关系**：
+- Phase 11 收口任务，可在完成后进入联调与回归测试
+
+---
+
+## 📊 Phase 11 里程碑与依赖链
+
+1. **Milestone A**：Task 11.1 完成（难度 Prompt 校准）
+2. **Milestone B**：Task 11.2 完成（汤类型流程 + `soup_type`）
+3. **Milestone C**：Task 11.3 完成（`/hint` + `hint_count`）
+
+依赖链：
+`Task 11.1 → Task 11.2 → Task 11.3`
+
+---
+
+## ✅ Phase 11 开发前检查清单
+
+- [ ] 生产库确认 `difficulty` 字段已存在（来自 Task 10.1）
+- [ ] 迁移 SQL 仅新增 `soup_type` 和 `hint_count`
+- [ ] callbacks 已预留“难度后进入汤类型”的流程位
+- [ ] commands 预留 `/hint` 注册位置
+- [ ] PRD、Task、Tech Design 三份文档口径一致

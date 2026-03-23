@@ -18,7 +18,7 @@ async function test() {
   await initDatabase();
 
   // 1. 重复启动游戏应抛出 GAME_IN_PROGRESS
-  await gameRepo.create(CHAT_ID_1, 'en', 'Scenario A', 'Truth A');
+  await gameRepo.create(CHAT_ID_1, 'en', 'medium', 'clear', 'Scenario A', 'Truth A');
   try {
     await gameLogic.startGame(CHAT_ID_1, 'en');
     throw new Error('预期抛出 GAME_IN_PROGRESS');
@@ -44,7 +44,7 @@ async function test() {
   console.log('✓ submitGuess 正确返回 language');
 
   // 4. revealAnswer 返回 language
-  await gameRepo.create(CHAT_ID_2, 'ru', 'Сценарий', 'Правда');
+  await gameRepo.create(CHAT_ID_2, 'ru', 'medium', 'clear', 'Сценарий', 'Правда');
   const revealResult = await gameLogic.revealAnswer(CHAT_ID_2);
   if (revealResult.language !== 'ru') {
     throw new Error(`revealAnswer 应返回 language 'ru'，得到: ${revealResult.language}`);
@@ -52,7 +52,7 @@ async function test() {
   console.log('✓ revealAnswer 正确返回 language');
 
   // 5. cancelGame 返回 language
-  await gameRepo.create(CHAT_ID_3, 'en', 'Scenario C', 'Truth C');
+  await gameRepo.create(CHAT_ID_3, 'en', 'medium', 'clear', 'Scenario C', 'Truth C');
   const cancelResult = await gameLogic.cancelGame(CHAT_ID_3);
   if (cancelResult.language !== 'en') {
     throw new Error(`cancelGame 应返回 language 'en'，得到: ${cancelResult.language}`);
