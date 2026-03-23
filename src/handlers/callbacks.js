@@ -34,10 +34,32 @@ export function registerCallbacks(bot) {
     const difficulty = ctx.match[2]; // 'easy' / 'medium' / 'hard'
 
     await ctx.answerCallbackQuery();
+
+    // 先弹汤类型键盘，只有用户再点一次汤类型后才触发生成/落库
+    const keyboard = new InlineKeyboard()
+      .text(t(language, 'soupTypeClear'), `soup_${language}_${difficulty}_clear`)
+      .text(t(language, 'soupTypeRed'), `soup_${language}_${difficulty}_red`)
+      .text(t(language, 'soupTypeBlack'), `soup_${language}_${difficulty}_black`);
+
+    await ctx.editMessageText(t(language, 'selectSoupType'), {
+      reply_markup: keyboard,
+    });
+  });
+
+  // 汤类型选择回调（callback_data: soup_en_easy_clear 等）
+  bot.callbackQuery(/^soup_(en|ru)_(easy|medium|hard)_(clear|red|black)$/, async (ctx) => {
+    const chatId = ctx.callbackQuery.message?.chat?.id ?? ctx.chat?.id;
+    if (!chatId) return;
+
+    const language = ctx.match[1]; // 'en' 或 'ru'
+    const difficulty = ctx.match[2]; // 'easy' / 'medium' / 'hard'
+    const soupType = ctx.match[3]; // 'clear' / 'red' / 'black'
+
+    await ctx.answerCallbackQuery();
     await ctx.editMessageText(t(language, 'generating'));
 
     try {
-      const { scenario } = await gameLogic.startGame(chatId, language, difficulty);
+      const { scenario } = await gameLogic.startGame(chatId, language, difficulty, soupType);
       const message = messageBuilder.buildScenarioMessage(language, scenario);
       await ctx.reply(message);
     } catch (error) {

@@ -15,6 +15,12 @@ export const messages = {
     difficultyMediumDesc: '1-2 twists, 10-20 questions',
     difficultyHardDesc: 'Multi-layered, dark themes, 20+ questions',
 
+    // 汤类型选择
+    selectSoupType: '🍲 Select soup type:',
+    soupTypeClear: '🍵 Clear Soup',
+    soupTypeRed: '🔴 Red Soup',
+    soupTypeBlack: '⚫ Black Soup',
+
     answerYes: '✅ Yes',
     answerNo: '❌ No',
     answerIrrelevant: '🤷 Irrelevant',
@@ -67,6 +73,12 @@ Good luck! 🍀`,
     difficultyEasyDesc: 'Простая логика, 5-10 вопросов',
     difficultyMediumDesc: '1-2 поворота, 10-20 вопросов',
     difficultyHardDesc: 'Многослойный, темные темы, 20+ вопросов',
+
+    // Выбор типа супа
+    selectSoupType: '🍲 Выберите тип супа:',
+    soupTypeClear: '🍵 Светлый суп',
+    soupTypeRed: '🔴 Красный суп',
+    soupTypeBlack: '⚫ Чёрный суп',
 
     answerYes: '✅ Да',
     answerNo: '❌ Нет',
