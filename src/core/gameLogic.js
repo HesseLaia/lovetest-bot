@@ -4,11 +4,11 @@ import { aiClient } from './aiClient.js';
 
 export const gameLogic = {
   /**
-   * 启动新游戏
+   * 最终生成并写库（向导完成后调用）
    */
-  async startGame(chatId, language, difficulty = 'medium', soupType = 'clear') {
+  async finalizeGame(chatId, language, difficulty, soupType) {
     try {
-      const { scenario, truth } = await aiClient.generateStory(language, difficulty);
+      const { scenario, truth } = await aiClient.generateStory(language, difficulty, soupType);
       await gameRepo.create(chatId, language, difficulty, soupType, scenario, truth);
 
       return { scenario, truth };
@@ -109,16 +109,20 @@ export const gameLogic = {
 
     const hintCount = Number(game.hint_count ?? 0);
     if (hintCount >= 3) {
-      return { language: game.language, exhausted: true };
+      const err = new Error('HINT_EXHAUSTED');
+      // 给 handler 复用语言信息
+      err.language = game.language;
+      throw err;
     }
 
     try {
       const hint = await aiClient.generateHint(game.scenario, game.questions_count, game.language);
       await gameRepo.incrementHints(chatId);
-      return { language: game.language, exhausted: false, hint };
+      const remainingHints = Math.max(0, 3 - (hintCount + 1));
+      return { language: game.language, hint, remainingHints };
     } catch (error) {
       // 失败/超时不递增 hint_count，允许用户立刻重试
-      return { language: game.language, exhausted: false, hintError: error.message || 'UNKNOWN' };
+      return { language: game.language, hintError: error.message || 'UNKNOWN' };
     }
   },
 };

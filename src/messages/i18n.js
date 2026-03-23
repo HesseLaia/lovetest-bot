@@ -43,6 +43,11 @@ export const messages = {
     hintPrefix: '💡 Hint:',
     hintUsedUp: 'You have used up all hints for this round.',
 
+    // docs/task 口径：hintUsed/hintExhausted/hintError
+    hintUsed: '💡 Hint: {hint}\n\nRemaining hints: {remaining}',
+    hintExhausted: 'You have used up all hints for this round.',
+    hintError: '⏳ Failed to generate a hint. Please try /hint again.',
+
     helpText: `🎮 **Lateral Thinking Puzzle (Situation Puzzle)**
 
 **How to Play:**
@@ -108,6 +113,11 @@ Good luck! 🍀`,
 
     hintPrefix: '💡 Подсказка:',
     hintUsedUp: 'Вы использовали все подсказки в этой игре.',
+
+    // docs/task 口径：hintUsed/hintExhausted/hintError
+    hintUsed: '💡 Подсказка: {hint}\n\nОсталось подсказок: {remaining}',
+    hintExhausted: 'Вы использовали все подсказки в этой игре.',
+    hintError: '⏳ Не удалось сгенерировать подсказку. Попробуйте /hint ещё раз.',
 
     helpText: `🎮 **Загадка на логику (Головоломка ситуации)**
 

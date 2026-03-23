@@ -6,9 +6,10 @@ export const aiClient = {
    * 生成故事（场景 + 汤底）
    * @param {string} language - 'en' 或 'ru'
    * @param {string} [difficulty='medium'] - 'easy' | 'medium' | 'hard'
+   * @param {string} [soupType='clear'] - 'clear' | 'red' | 'black'
    * @returns {Promise<{scenario: string, truth: string}>}
    */
-  async generateStory(language, difficulty = 'medium') {
+  async generateStory(language, difficulty = 'medium', soupType = 'clear') {
     const languageMap = {
       en: 'English',
       ru: 'Russian',
@@ -46,6 +47,23 @@ export const aiClient = {
 
     const difficultyPrompt = difficultyPrompts[difficulty] || difficultyPrompts.medium;
 
+    const soupTypePrompts = {
+      clear: `Soup Type: CLEAR (clear soup)
+- Pure logic reasoning, no gore
+- Family-friendly tone; keep it relatively calm
+- The "twist" should come from logic, not shock`,
+      red: `Soup Type: RED (red soup)
+- Suspense / thriller / mild psychological horror
+- Light-to-moderate dark mood; can include mild violence but avoid graphic details
+- Misleading atmosphere is allowed, but do not reveal the ending directly`,
+      black: `Soup Type: BLACK (black soup)
+- Bizarre, disturbing, or high-stakes dark twist
+- Strong stimulation; may include gore or shocking revelations
+- Make the story more unsettling and intense`,
+    };
+
+    const soupTypePrompt = soupTypePrompts[soupType] || soupTypePrompts.clear;
+
     const prompt = `You are a host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
 Generate a puzzle in ${languageMap[language]} with the following requirements:
 
@@ -53,6 +71,8 @@ ${difficultyPrompt}
 
 Puzzle Type (MUST follow this style):
 ${randomType}
+
+${soupTypePrompt}
 
 Requirements:
 1. Scenario: 50-100 words, mysterious and intriguing
@@ -73,54 +93,62 @@ Return ONLY a valid JSON object with this exact format:
 {"scenario": "...", "truth": "..."}
 Do not include any other text or explanation.`;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时
+    // generateStory 内部失败自动重试 1 次（总共 2 次）
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s 超时
 
-    try {
-      const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/yourusername/lovetest_bot',
-        },
-        body: JSON.stringify({
-          model: config.OPENROUTER_MODEL,
-          messages: [
-            { role: 'user', content: prompt },
-          ],
-        }),
-        signal: controller.signal,
-      });
+      try {
+        const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${config.OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://github.com/yourusername/lovetest_bot',
+          },
+          body: JSON.stringify({
+            model: config.OPENROUTER_MODEL,
+            messages: [
+              { role: 'user', content: prompt },
+            ],
+          }),
+          signal: controller.signal,
+        });
 
-      clearTimeout(timeout);
+        clearTimeout(timeout);
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter API 错误: ${response.status}`);
+        if (!response.ok) {
+          throw new Error(`OpenRouter API 错误: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const rawContent = data.choices?.[0]?.message?.content;
+        if (rawContent == null) {
+          throw new Error('AI 返回的数据格式不正确');
+        }
+        const content = String(rawContent).trim();
+
+        // 若模型返回了 markdown 代码块，尝试剥离
+        const jsonStr = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+        const storyData = JSON.parse(jsonStr);
+
+        if (!storyData.scenario || !storyData.truth) {
+          throw new Error('AI 返回的数据格式不正确');
+        }
+
+        return storyData;
+      } catch (error) {
+        clearTimeout(timeout);
+        if (error.name === 'AbortError') {
+          lastError = new Error('API_TIMEOUT');
+        } else {
+          lastError = error;
+        }
+
+        if (attempt === 0) continue;
+        throw lastError;
       }
-
-      const data = await response.json();
-      const rawContent = data.choices?.[0]?.message?.content;
-      if (rawContent == null) {
-        throw new Error('AI 返回的数据格式不正确');
-      }
-      const content = String(rawContent).trim();
-
-      // 若模型返回了 markdown 代码块，尝试剥离
-      const jsonStr = content.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-      const storyData = JSON.parse(jsonStr);
-
-      if (!storyData.scenario || !storyData.truth) {
-        throw new Error('AI 返回的数据格式不正确');
-      }
-
-      return storyData;
-    } catch (error) {
-      clearTimeout(timeout);
-      if (error.name === 'AbortError') {
-        throw new Error('API_TIMEOUT');
-      }
-      throw error;
     }
   },
 

@@ -88,29 +88,30 @@ export function registerCommands(bot) {
     try {
       const result = await gameLogic.getHint(chatId);
 
-      if (result.exhausted) {
-        await ctx.reply(t(result.language, 'hintUsedUp'));
-        return;
-      }
-
       if (result.hint) {
-        await ctx.reply(messageBuilder.buildHintMessage(result.language, result.hint));
+        await ctx.reply(
+          messageBuilder.buildHintMessage(result.language, result.hint, result.remainingHints)
+        );
         return;
       }
 
-      if (result.hintError === 'API_TIMEOUT') {
-        await ctx.reply(t(result.language, 'networkError'));
+      if (result.hintError) {
+        await ctx.reply(t(result.language, 'hintError'));
         return;
       }
-
-      await ctx.reply(t(result.language, 'unknownError'));
     } catch (error) {
       if (error.message === 'NO_GAME') {
         await ctx.reply(t('en', 'noGame'));
-      } else {
-        console.error('Error in /hint:', error);
-        await ctx.reply(t('en', 'unknownError'));
+        return;
       }
+
+      if (error.message === 'HINT_EXHAUSTED') {
+        await ctx.reply(t(error.language || 'en', 'hintExhausted'));
+        return;
+      }
+
+      console.error('Error in /hint:', error);
+      await ctx.reply(t('en', 'unknownError'));
     }
   });
 

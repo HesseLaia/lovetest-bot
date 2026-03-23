@@ -1663,154 +1663,172 @@ git push origin HEAD
 
 ---
 
-### Task 11.1：难度重新校准（Prompt 策略）
+### Task 11.1：数据库添加 `soup_type` 和 `hint_count` 字段
 
-**目标**：按 PRD 新定义重做 Easy / Medium / Hard 生成策略（仅 Prompt 约束，不做产品层硬计数器）
+**目标**：在 `games` 表中添加新字段支持汤类型与提示功能
+
+**依赖**：Task 10.1（difficulty 字段已存在）
+
+**改动文件**：
+- `src/db/pool.js` - 修改 `initDatabase()` 的建表 SQL
+- `src/db/gameRepo.js` - 修改 `create()` 方法签名、新增 `incrementHints()` 方法
+
+**具体实现要点**：
+
+#### 1. `src/db/pool.js` - 修改建表 SQL
+
+在 `CREATE TABLE` 中新增 `soup_type`、`hint_count`，修改 `questions_count` 的 COMMENT。完整表结构见 PRD。
+
+#### 2. `src/db/gameRepo.js` - 修改 create 与新增 incrementHints
+
+```javascript
+async create(chatId, language, difficulty, soupType, scenario, truth) {
+  const [result] = await pool.execute(
+    `INSERT INTO games (chat_id, language, difficulty, soup_type, scenario, truth, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'playing')`,
+    [chatId, language, difficulty, soupType, scenario, truth]
+  );
+  return result.insertId;
+},
+
+async incrementHints(chatId) {
+  await pool.execute(
+    `UPDATE games SET hint_count = hint_count + 1
+     WHERE chat_id = ? AND status = 'playing'`,
+    [chatId]
+  );
+},
+```
+
+**数据库迁移**（生产库已有 `difficulty`，只新增 `soup_type` 和 `hint_count`）：
+
+```sql
+ALTER TABLE games 
+  ADD COLUMN soup_type VARCHAR(10) NOT NULL DEFAULT 'clear' AFTER difficulty,
+  ADD COLUMN hint_count INT DEFAULT 0 AFTER questions_count;
+```
+
+⚠️ **或删表重建**（如无重要历史数据）：`DROP TABLE IF EXISTS games;` 后重启 bot 自动建表。
+
+**验收标准**：
+- [ ] `DESCRIBE games;` 能看到 `soup_type` 和 `hint_count` 字段
+- [ ] `gameRepo.create(chatId, 'en', 'medium', 'red', scenario, truth)` 能成功插入
+- [ ] `gameRepo.incrementHints(chatId)` 能正确递增 `hint_count`
+
+---
+
+### Task 11.2：多语言新增汤类型与 hint 相关文案
+
+**目标**：在 i18n 中添加难度选择、汤类型按钮、提示消息与 `/help` 更新
+
+**依赖**：Task 10.2（难度 key 可能已有，本 Task 确保齐全）
+
+**改动文件**：`src/messages/i18n.js`、`src/messages/builder.js`
+
+**具体实现要点**：
+
+在 `messages.en` 和 `messages.ru` 中添加/补齐：`selectDifficulty`、`difficultyEasy/Medium/Hard`、`selectSoupType`、`soupClear/Red/Black`、`hintUsed`、`hintExhausted`、`hintError`，更新 `helpText`。`builder.js` 新增 `buildHintMessage(language, hint, remainingHints)`。难度 key 使用 `⚡ Select difficulty:`、`🟢 Easy` 等（俄语同理）。
+
+**验收标准**：
+- [ ] `t('en', 'selectDifficulty')` 返回 `'⚡ Select difficulty:'`
+- [ ] `t('en', 'soupClear')` 返回 `'🍵 Clear Soup'`
+- [ ] `helpText` 包含 `/hint` 与汤类型说明
+- [ ] `buildHintMessage()` 正确替换 `{hint}` 和 `{remaining}`
+
+**依赖**：Task 11.5 依赖本任务（callbacks 使用这些 key）
+
+---
+
+### Task 11.3：AI 客户端支持难度+汤类型与新增 hint 生成
+
+**目标**：`generateStory()` 接收 difficulty 和 soupType；新增 `generateHint()` 方法
 
 **依赖**：无
 
-**改动文件**：
-- `src/core/aiClient.js`
-- `src/core/gameLogic.js`（方法签名透传 difficulty）
-- `docs/tech_design.md`（后续同步）
+**改动文件**：`src/core/aiClient.js`
 
-**具体实现要点**：
-1. `generateStory(language, difficulty, soupType)` 支持难度参数（如当前仍是旧签名需升级）。
-2. Prompt 按难度约束题量与结构：
-   - Easy：5-10 问、单核心反转、人物 ≤2、直给
-   - Medium：15-25 问、1-2 误导细节
-   - Hard：30+ 问、多层反转、强误导
-3. 明确写入：题数区间是 AI 写作约束，不是运行时题数限制。
-4. 按难度控制字数区间：
-   - Easy：scenario 30-60，truth 80-150
-   - Medium：scenario 50-100，truth 150-250
-   - Hard：scenario 80-150，truth 250-400
+**具体实现要点**：按 PRD 难度定义调整 prompt；按 difficulty 控制字数；按 soupType 控制题材；新增 `generateHint(scenario, questionsCount, language)`，只传 scenario+questionsCount，不传 truth，输出纯自然语言≤2句。
 
 **验收标准**：
-- [ ] `generateStory('en','easy','clear')` 结果整体符合 Easy 风格
-- [ ] `generateStory('en','medium','red')` 结果整体符合 Medium 风格
-- [ ] `generateStory('en','hard','black')` 结果整体符合 Hard 风格
-- [ ] 三档字数约束在多数样本中生效（抽样 10 次）
-- [ ] 返回格式仍为合法 JSON `{scenario, truth}`
-
-**依赖关系**：
-- 下游 Task 11.2 依赖本任务（流程最终调用生成时需用新签名）
+- [ ] `generateStory('en', 'hard', 'black')` 符合 Hard+黑汤风格
+- [ ] `generateHint()` 返回纯文本、≤2 句、无关键剧透
 
 ---
 
-### Task 11.2：汤类型选择流程 + `soup_type` 迁移
+### Task 11.4：游戏逻辑层支持汤类型与新增 getHint 方法
 
-**目标**：在“难度之后”增加汤类型选择，并把 `soup_type` 持久化到 `games`
+**目标**：`startGame` 改为 `finalizeGame` 并接收 soupType；新增 `getHint()` 逻辑
 
-**依赖**：Task 11.1
+**依赖**：Task 11.1, Task 11.3
 
-**改动文件**：
-- `src/db/pool.js`
-- `src/db/gameRepo.js`
-- `src/handlers/callbacks.js`
-- `src/handlers/commands.js`
-- `src/messages/i18n.js`
-- `docs/tech_design.md`（后续同步）
+**改动文件**：`src/core/gameLogic.js`
 
-**具体实现要点**：
-1. **数据库迁移**（生产库已有 `difficulty`，这里只新增两个字段中的 `soup_type` 部分）：
-```sql
-ALTER TABLE games 
-  ADD COLUMN soup_type VARCHAR(10) NOT NULL DEFAULT 'clear' AFTER difficulty;
-```
-2. `gameRepo.create(...)` 扩展为包含 `soup_type` 插入。
-3. 回调流程改成三级：
-   - `lang_*` → 弹难度键盘
-   - `diff_*` → 弹汤类型键盘
-   - `soup_*` → 才触发生成与写库
-4. 汤类型与难度独立组合（允许 Easy+黑汤、Hard+清汤）。
-5. 向导状态不写库；只有“生成成功后”才 INSERT。
-6. 向导中再次 `/newgame`：因无 playing 记录，直接重置向导。
-7. i18n 补齐并统一管理（本任务内明确包含难度与汤类型 key）：
-   - 难度 key（供 callbacks 使用）：
-     - `selectDifficulty: '⚡ Select difficulty:'`
-     - `difficultyEasy: '🟢 Easy'`
-     - `difficultyMedium: '🟡 Medium'`
-     - `difficultyHard: '🔴 Hard'`
-     - 俄语同语义对应
-   - 汤类型 key：
-     - EN：`🍵 Clear Soup` / `🔴 Red Soup` / `⚫ Black Soup`
-     - RU：`🍵 Светлый суп` / `🔴 Красный суп` / `⚫ Чёрный суп`
+**具体实现要点**：`finalizeGame(chatId, language, difficulty, soupType)` 在生成成功后 INSERT；`getHint(chatId)` 检查 hint_count<3，仅成功时 incrementHints。
 
 **验收标准**：
-- [ ] `/newgame` 后顺序为：语言 → 难度 → 汤类型
-- [ ] 汤类型在难度之后出现，且 2×3×3 组合可选
-- [ ] 生成成功后数据库存在 `status='playing'`，并写入正确 `soup_type`
-- [ ] 向导中再次 `/newgame` 会重置向导
-- [ ] 已有 playing 时 `/newgame` 仍提示 gameInProgress
-
-**依赖关系**：
-- 下游 Task 11.3 依赖本任务（共享迁移与 i18n 结构）
+- [ ] `finalizeGame` 成功写入 `soup_type`
+- [ ] `getHint` 成功时递增，失败时不递增；hint_count>=3 时抛出 HINT_EXHAUSTED
 
 ---
 
-### Task 11.3：`/hint` 命令 + `hint_count` 迁移
+### Task 11.5：Handler 层新增汤类型选择与 /hint 命令
 
-**目标**：实现每局 3 次方向性提示，并持久化 `hint_count`
+**目标**：在难度选择后弹汤类型键盘；注册 `/hint` 命令
 
-**依赖**：Task 11.2
+**依赖**：Task 11.2, Task 11.4
 
-**改动文件**：
-- `src/db/pool.js`
-- `src/db/gameRepo.js`
-- `src/core/aiClient.js`
-- `src/core/gameLogic.js`
-- `src/handlers/commands.js`（注册新命令）
-- `src/messages/i18n.js`
-- `src/messages/builder.js`
-- `docs/tech_design.md`（后续同步）
+**改动文件**：`src/handlers/callbacks.js`、`src/handlers/commands.js`
 
-**具体实现要点**：
-1. **数据库迁移**（生产库已有 `difficulty`）：
-```sql
-ALTER TABLE games 
-  ADD COLUMN hint_count INT DEFAULT 0 AFTER questions_count;
-```
-2. 在 `commands.js` 注册 `/hint`。
-3. `gameLogic.getHint(chatId)`：
-   - 检查当前有无 playing
-   - `hint_count >= 3` 直接返回“已用完”
-   - 调用 AI 生成提示（输入仅 `scenario` + `questions_count` + `language`）
-4. 提示生成规则：
-   - 不传 `truth`
-   - 纯自然语言，不用 JSON
-   - 不超过 2 句话
-   - 不直接透露关键人物/关键动作/结局
-5. 计数规则：
-   - **仅 AI 成功返回提示时**递增 `hint_count`
-   - 超时/失败不扣次数，用户可立即重试
-6. `questions_count` 语义对齐 PRD：
-   - 仅统计成功完成判断流程的提问
-   - `IRRELEVANT` 也计入
-   - `/hint` 传入该字段当前值
-7. `/help` 文案同步补充 `/hint` 与汤类型说明（EN/RU）。
+**具体实现要点**：callbacks 三级向导（lang→diff→soup）；commands 注册 `/hint`。
 
 **验收标准**：
-- [ ] `/hint` 在游戏中可正常返回提示，且语言与 `game.language` 一致
-- [ ] 前 3 次成功提示后，第 4 次请求返回“本局提示已用完”
-- [ ] AI 超时/失败时 `hint_count` 不增加，且可立即重试
-- [ ] `/hint` 无游戏时返回 noGame
-- [ ] 数据库 `hint_count` 与实际成功提示次数一致
-- [ ] `/help` 已包含 `/hint` 和汤类型说明
+- [ ] 流程为：语言 → 难度 → 汤类型 → 生成
+- [ ] `/hint` 有游戏时返回提示，用完时 hintExhausted
 
-**依赖关系**：
-- Phase 11 收口任务，可在完成后进入联调与回归测试
+---
+
+### Task 11.6：生成失败重试逻辑与向导重置
+
+**目标**：生成故事失败时重试 1 次；向导中 `/newgame` 重置向导
+
+**依赖**：Task 11.3, Task 11.5
+
+**改动文件**：`src/core/aiClient.js`、`src/handlers/commands.js`
+
+**具体实现要点**：generateStory 失败时再试 1 次；/newgame 无 playing 时直接弹语言键盘（重置向导）。
+
+**验收标准**：
+- [ ] 生成失败重试 1 次，仍失败则提示重发 /newgame
+- [ ] 向导中再次 `/newgame` 会重置
+
+---
+
+### Task 11.7：集成测试与文档更新
+
+**目标**：全流程测试 18 种组合；更新 `tech_design.md`
+
+**依赖**：Task 11.1 ~ 11.6 全部完成
+
+**测试要点**：18 种组合抽查；/hint 全流程；向导重置；生成失败重试。**文档**：tech_design.md 同步表结构、方法签名、三级向导、/hint 等。
+
+**验收标准**：
+- [ ] 18 种组合抽查通过
+- [ ] `/hint` 全流程验证通过
+- [ ] tech_design.md 已同步
 
 ---
 
 ## 📊 Phase 11 里程碑与依赖链
 
-1. **Milestone A**：Task 11.1 完成（难度 Prompt 校准）
-2. **Milestone B**：Task 11.2 完成（汤类型流程 + `soup_type`）
-3. **Milestone C**：Task 11.3 完成（`/hint` + `hint_count`）
+1. **Milestone A**：Task 11.1 完成（数据库迁移）
+2. **Milestone B**：Task 11.2 完成（i18n）
+3. **Milestone C**：Task 11.3 完成（AI 层）
+4. **Milestone D**：Task 11.4 完成（gameLogic）
+5. **Milestone E**：Task 11.5 完成（Handler）
+6. **Milestone F**：Task 11.6 完成（重试与重置）
+7. **Milestone G**：Task 11.7 完成（测试与文档）
 
-依赖链：
-`Task 11.1 → Task 11.2 → Task 11.3`
+依赖链：`11.1 → 11.4`；`11.2 → 11.5`；`11.3 → 11.4`；`11.4 → 11.5`；`11.5 → 11.6 → 11.7`
 
 ---
 

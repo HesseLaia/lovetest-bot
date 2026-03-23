@@ -20,7 +20,7 @@ async function test() {
   // 1. 重复启动游戏应抛出 GAME_IN_PROGRESS
   await gameRepo.create(CHAT_ID_1, 'en', 'medium', 'clear', 'Scenario A', 'Truth A');
   try {
-    await gameLogic.startGame(CHAT_ID_1, 'en');
+    await gameLogic.finalizeGame(CHAT_ID_1, 'en', 'medium', 'clear');
     throw new Error('预期抛出 GAME_IN_PROGRESS');
   } catch (e) {
     if (e.message !== 'GAME_IN_PROGRESS') throw e;

@@ -54,7 +54,16 @@ export const messageBuilder = {
   /**
    * 构建提示消息
    */
-  buildHintMessage(language, hint) {
+  buildHintMessage(language, hint, remainingHints = 0) {
+    // 支持文档口径：hintUsed 模板里替换 {hint}/{remaining}
+    const template = t(language, 'hintUsed');
+    if (template && (template.includes('{hint}') || template.includes('{remaining}'))) {
+      return template
+        .replace('{hint}', hint)
+        .replace('{remaining}', String(remainingHints));
+    }
+
+    // 兼容旧 key：hintPrefix
     return t(language, 'hintPrefix') + '\n\n' + hint;
   },
 };

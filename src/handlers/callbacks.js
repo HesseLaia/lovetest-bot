@@ -59,7 +59,7 @@ export function registerCallbacks(bot) {
     await ctx.editMessageText(t(language, 'generating'));
 
     try {
-      const { scenario } = await gameLogic.startGame(chatId, language, difficulty, soupType);
+      const { scenario } = await gameLogic.finalizeGame(chatId, language, difficulty, soupType);
       const message = messageBuilder.buildScenarioMessage(language, scenario);
       await ctx.reply(message);
     } catch (error) {
