@@ -97,4 +97,28 @@ export const gameLogic = {
 
     return { language };
   },
+
+  /**
+   * 获取方向性提示（最多 3 次，成功才递增 hint_count）
+   */
+  async getHint(chatId) {
+    const game = await gameRepo.getCurrentGame(chatId);
+    if (!game) {
+      throw new Error('NO_GAME');
+    }
+
+    const hintCount = Number(game.hint_count ?? 0);
+    if (hintCount >= 3) {
+      return { language: game.language, exhausted: true };
+    }
+
+    try {
+      const hint = await aiClient.generateHint(game.scenario, game.questions_count, game.language);
+      await gameRepo.incrementHints(chatId);
+      return { language: game.language, exhausted: false, hint };
+    } catch (error) {
+      // 失败/超时不递增 hint_count，允许用户立刻重试
+      return { language: game.language, exhausted: false, hintError: error.message || 'UNKNOWN' };
+    }
+  },
 };

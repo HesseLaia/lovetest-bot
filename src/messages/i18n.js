@@ -40,6 +40,9 @@ export const messages = {
     networkError: '⏳ Network timeout. Please try again later',
     unknownError: '❌ An error occurred. Please try again',
 
+    hintPrefix: '💡 Hint:',
+    hintUsedUp: 'You have used up all hints for this round.',
+
     helpText: `🎮 **Lateral Thinking Puzzle (Situation Puzzle)**
 
 **How to Play:**
@@ -48,13 +51,17 @@ export const messages = {
 3. Ask yes/no questions by replying to bot's messages
 4. Deduce the complete story
 5. Submit your guess with /guess or reveal answer with /reveal
+6. Use /hint for a directional hint (up to 3 times per game)
 
 **Commands:**
 /newgame - Start a new game
 /guess <your guess> - Submit your guess
 /reveal - Show the answer
 /cancel - Cancel current game
+/hint - Get a directional hint (limited)
 /help - Show this help
+
+**Soup Type:** Clear / Red / Black
 
 Good luck! 🍀`,
   },
@@ -99,6 +106,9 @@ Good luck! 🍀`,
     networkError: '⏳ Тайм-аут сети. Попробуйте позже',
     unknownError: '❌ Произошла ошибка. Попробуйте снова',
 
+    hintPrefix: '💡 Подсказка:',
+    hintUsedUp: 'Вы использовали все подсказки в этой игре.',
+
     helpText: `🎮 **Загадка на логику (Головоломка ситуации)**
 
 **Как играть:**
@@ -107,13 +117,17 @@ Good luck! 🍀`,
 3. Задавайте вопросы да/нет, отвечая на сообщения бота
 4. Выведите полную историю
 5. Отправьте свою догадку с /guess или покажите ответ с /reveal
+6. Используйте /hint для направления (до 3 раз за игру)
 
 **Команды:**
 /newgame - Начать новую игру
 /guess <ваша догадка> - Отправить вашу догадку
 /reveal - Показать ответ
 /cancel - Отменить текущую игру
+/hint - Получить подсказку (ограничено)
 /help - Показать эту справку
+
+**Тип супа:** Светлый / Красный / Чёрный
 
 Удачи! 🍀`,
   },

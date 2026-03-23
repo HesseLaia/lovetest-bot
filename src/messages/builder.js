@@ -50,4 +50,11 @@ export const messageBuilder = {
   buildCancelMessage(language) {
     return t(language, 'gameCancelled') + t(language, 'startNewGame');
   },
+
+  /**
+   * 构建提示消息
+   */
+  buildHintMessage(language, hint) {
+    return t(language, 'hintPrefix') + '\n\n' + hint;
+  },
 };

@@ -195,4 +195,74 @@ Respond in ${languageMap[language]}. Output ONLY the word, nothing else.`;
       throw error;
     }
   },
+
+  /**
+   * 生成方向性提示（不透露 truth，不要求 JSON）
+   * @param {string} scenario
+   * @param {number} questionsCount - 当前 questions_count（含 IRRELEVANT）
+   * @param {string} language - 'en' | 'ru'
+   * @returns {Promise<string>}
+   */
+  async generateHint(scenario, questionsCount, language) {
+    const languageMap = {
+      en: 'English',
+      ru: 'Russian',
+    };
+
+    const prompt = `You are the host of a Lateral Thinking Puzzle game (also known as "Situation Puzzle" or "海龟汤").
+
+Scenario:
+${scenario}
+
+Questions already asked (including irrelevant ones):
+${questionsCount}
+
+Your task:
+- Provide ONE directional hint for the next yes/no question.
+- Do NOT reveal the complete truth.
+- Do NOT mention key persons, key actions, or the ending directly.
+- Keep it within 2 sentences maximum.
+
+Respond in ${languageMap[language]}.
+Output ONLY the hint text, without any preamble or JSON.`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000); // 10s 超时
+
+    try {
+      const response = await fetch(`${config.OPENROUTER_BASE_URL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: config.OPENROUTER_MODEL,
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 120, // 方向性线索通常很短
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API 错误: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawContent = data.choices?.[0]?.message?.content;
+      if (rawContent == null) {
+        throw new Error('AI 返回的数据格式不正确');
+      }
+
+      return String(rawContent).trim();
+    } catch (error) {
+      clearTimeout(timeout);
+      if (error.name === 'AbortError') {
+        throw new Error('API_TIMEOUT');
+      }
+      throw error;
+    }
+  },
 };

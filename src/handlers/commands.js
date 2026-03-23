@@ -81,6 +81,39 @@ export function registerCommands(bot) {
     }
   });
 
+  // /hint - 获取方向性提示（最多 3 次，成功才递增 hint_count）
+  bot.command('hint', async (ctx) => {
+    const chatId = ctx.chat.id;
+
+    try {
+      const result = await gameLogic.getHint(chatId);
+
+      if (result.exhausted) {
+        await ctx.reply(t(result.language, 'hintUsedUp'));
+        return;
+      }
+
+      if (result.hint) {
+        await ctx.reply(messageBuilder.buildHintMessage(result.language, result.hint));
+        return;
+      }
+
+      if (result.hintError === 'API_TIMEOUT') {
+        await ctx.reply(t(result.language, 'networkError'));
+        return;
+      }
+
+      await ctx.reply(t(result.language, 'unknownError'));
+    } catch (error) {
+      if (error.message === 'NO_GAME') {
+        await ctx.reply(t('en', 'noGame'));
+      } else {
+        console.error('Error in /hint:', error);
+        await ctx.reply(t('en', 'unknownError'));
+      }
+    }
+  });
+
   // /cancel - 取消游戏
   bot.command('cancel', async (ctx) => {
     const chatId = ctx.chat.id;
